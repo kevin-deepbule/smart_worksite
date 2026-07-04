@@ -4,11 +4,13 @@ This file describes collaboration rules for the Smart Worksite backend. Read `RE
 
 ## Project Positioning
 
-This repository is the Spring Boot backend scaffold for the Smart Worksite AI application.
+This repository contains the Smart Worksite AI application. The existing root-level `src/`, `pom.xml`, and `deploy/` are the Spring Boot backend scaffold. Frontend work must live under `frontend/`.
 
 The current phase focuses on engineering foundations, not full implementations of Q&A, compliance review, report generation, or OCR. AI, RAG, OCR, vector database, and large-model capabilities should be integrated later through external service adapters.
 
 ## Tech Stack
+
+Backend:
 
 - Java 17
 - Spring Boot 3.3.x
@@ -19,6 +21,17 @@ The current phase focuses on engineering foundations, not full implementations o
 - Redis
 - MinIO
 - Flyway
+
+Frontend:
+
+- Vue 3
+- TypeScript
+- Vite
+- Pinia
+- Vue Router
+- Axios
+- Element Plus
+- npm
 
 ## Local Dependencies
 
@@ -100,3 +113,34 @@ Request IDs are handled by `common.config.RequestIdFilter`. The response header 
 - If changing public contracts, database schema, external APIs, or collaboration rules, update docs as well.
 - The workspace may contain user changes; never revert unrelated files.
 - Do not write real secrets, accounts, or production addresses into generated SQL, config, or examples.
+
+## Frontend Rules
+
+- Frontend code must be placed in `frontend/`.
+- Do not modify backend `src/`, `pom.xml`, or `deploy/` for frontend-only tasks unless explicitly requested.
+- Use `npm` for frontend package management.
+- API base URL must be read from `.env` as `VITE_API_BASE_URL`.
+- Development may use mock data when the backend API is not available.
+- All HTTP calls must go through `frontend/src/utils/request.ts`.
+- Requests should automatically attach `Authorization` when a token exists.
+- Requests should automatically attach `X-Request-Id`.
+- Handle unified backend responses with `code`, `message`, `data`, `requestId`, and `timestamp`.
+- `401` should redirect to `/login`.
+- `403` should redirect to `/403`.
+- Do not let frontend code directly call Python services, databases, MinIO, vector databases, or OCR engines.
+- Reusable upload, table, search, dialog form, status tag, progress, JSON viewer, empty state, and download behavior should be implemented as shared components.
+- Every page must handle loading, empty, and error states.
+- Long-running tasks such as report generation, OCR recognition, and knowledge indexing must show status, progress, or stage logs.
+- AI results should expose traceable information where available, such as sources, confidence, raw JSON, or document references.
+
+## Frontend UI Style
+
+- Follow `智慧工地前端UI风格指南.md`.
+- Use an enterprise smart worksite admin style with a lightweight data cockpit feel.
+- Prefer a light theme.
+- Use industrial blue as the primary color, with teal and construction orange as accent colors.
+- Use a left-side menu, top project switcher, and card-based content sections.
+- Do not use a pure big-screen dashboard style.
+- Do not use dark mode as the default.
+- Do not use a flashy consumer AI chat product style.
+
