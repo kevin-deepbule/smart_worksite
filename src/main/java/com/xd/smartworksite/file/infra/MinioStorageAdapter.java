@@ -35,7 +35,7 @@ public class MinioStorageAdapter implements StorageAdapter {
                     .stream(inputStream, size, -1)
                     .contentType(contentType)
                     .build());
-            return new StorageObject(objectName, contentType, size);
+            return new StorageObject(objectName, properties.getBucket(), contentType, size);
         } catch (Exception ex) {
             throw new IllegalStateException("upload object failed", ex);
         }

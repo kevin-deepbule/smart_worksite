@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xd.smartworksite.file.mapper.FileObjectMapper">
+
+    <resultMap id="FileObjectResultMap" type="com.xd.smartworksite.file.domain.FileObject">
+        <id property="id" column="id"/>
+        <result property="projectId" column="project_id"/>
+        <result property="bizType" column="biz_type"/>
+        <result property="bizId" column="biz_id"/>
+        <result property="fileName" column="file_name"/>
+        <result property="fileExt" column="file_ext"/>
+        <result property="objectName" column="object_name"/>
+        <result property="storageBucket" column="storage_bucket"/>
+        <result property="contentType" column="content_type"/>
+        <result property="fileSize" column="file_size"/>
+        <result property="fileHash" column="file_hash"/>
+        <result property="status" column="status"/>
+        <result property="metadata" column="metadata"/>
+        <result property="previewSupported" column="preview_supported"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <sql id="FileObjectColumns">
+        id, project_id, biz_type, biz_id, file_name, file_ext, object_name, storage_bucket,
+        content_type, file_size, file_hash, status, metadata, preview_supported, created_at, updated_at
+    </sql>
+
+    <insert id="insert" parameterType="com.xd.smartworksite.file.domain.FileObject"
+            useGeneratedKeys="true" keyProperty="id">
+        insert into file_object (
+            project_id, biz_type, biz_id, file_name, file_ext, object_name, storage_bucket,
+            content_type, file_size, file_hash, status, metadata, preview_supported, deleted
+        ) values (
+            #{projectId}, #{bizType}, #{bizId}, #{fileName}, #{fileExt}, #{objectName}, #{storageBucket},
+            #{contentType}, #{fileSize}, #{fileHash}, #{status}, #{metadata}, #{previewSupported}, 0
+        )
+    </insert>
+
+    <select id="selectPage" resultMap="FileObjectResultMap">
+        select <include refid="FileObjectColumns"/>
+        from file_object
+        where deleted = 0
+          and project_id = #{projectId}
+        <if test="bizType != null and bizType != ''">
+          and biz_type = #{bizType}
+        </if>
+        <if test="bizId != null">
+          and biz_id = #{bizId}
+        </if>
+        <if test="status != null and status != ''">
+          and status = #{status}
+        </if>
+        <if test="keyword != null and keyword != ''">
+          and file_name like concat('%', #{keyword}, '%')
+        </if>
+        <if test="createdFrom != null">
+          and created_at &gt;= #{createdFrom}
+        </if>
+        <if test="createdTo != null">
+          and created_at &lt;= #{createdTo}
+        </if>
+        order by created_at desc, id desc
+    </select>
+
+    <select id="selectById" resultMap="FileObjectResultMap">
+        select <include refid="FileObjectColumns"/>
+        from file_object
+        where id = #{fileId}
+          and deleted = 0
+    </select>
+
+    <update id="markDeleted">
+        update file_object
+        set deleted = 1,
+            status = #{status},
+            updated_at = current_timestamp
+        where id = #{fileId}
+          and deleted = 0
+    </update>
+</mapper>
