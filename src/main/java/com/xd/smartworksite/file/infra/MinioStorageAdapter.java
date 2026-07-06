@@ -1,6 +1,7 @@
 package com.xd.smartworksite.file.infra;
 
 import io.minio.GetPresignedObjectUrlArgs;
+import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
@@ -35,9 +36,21 @@ public class MinioStorageAdapter implements StorageAdapter {
                     .stream(inputStream, size, -1)
                     .contentType(contentType)
                     .build());
-            return new StorageObject(objectName, contentType, size);
+            return new StorageObject(objectName, properties.getBucket(), contentType, size);
         } catch (Exception ex) {
             throw new IllegalStateException("upload object failed", ex);
+        }
+    }
+
+    @Override
+    public InputStream openObject(String objectName) {
+        try {
+            return minioClient.getObject(GetObjectArgs.builder()
+                    .bucket(properties.getBucket())
+                    .object(objectName)
+                    .build());
+        } catch (Exception ex) {
+            throw new IllegalStateException("open object failed", ex);
         }
     }
 

@@ -1,0 +1,157 @@
+package com.xd.smartworksite.file.application;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+import java.util.ArrayList;
+import java.util.List;
+
+@ConfigurationProperties(prefix = "app.file")
+public class FileProperties {
+
+    private long accessUrlExpireSeconds = 600;
+    private long maxSizeBytes = 104857600;
+    private Parse parse = new Parse();
+    private List<String> allowedContentTypes = new ArrayList<>(List.of(
+            "application/pdf",
+            "text/plain",
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-powerpoint",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    ));
+
+    public long getAccessUrlExpireSeconds() {
+        return accessUrlExpireSeconds;
+    }
+
+    public void setAccessUrlExpireSeconds(long accessUrlExpireSeconds) {
+        this.accessUrlExpireSeconds = accessUrlExpireSeconds;
+    }
+
+    public long getMaxSizeBytes() {
+        return maxSizeBytes;
+    }
+
+    public void setMaxSizeBytes(long maxSizeBytes) {
+        this.maxSizeBytes = maxSizeBytes;
+    }
+
+    public List<String> getAllowedContentTypes() {
+        return allowedContentTypes;
+    }
+
+    public void setAllowedContentTypes(List<String> allowedContentTypes) {
+        this.allowedContentTypes = allowedContentTypes;
+    }
+
+    public Parse getParse() {
+        return parse;
+    }
+
+    public void setParse(Parse parse) {
+        this.parse = parse;
+    }
+
+    public static class Parse {
+
+        private boolean enabled = true;
+        private int maxPages = 100;
+        private int resultPreviewLength = 2000;
+        private int maxInputChars = 120000;
+        private QwenVl qwenVl = new QwenVl();
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public int getMaxPages() {
+            return maxPages;
+        }
+
+        public void setMaxPages(int maxPages) {
+            this.maxPages = maxPages;
+        }
+
+        public int getResultPreviewLength() {
+            return resultPreviewLength;
+        }
+
+        public void setResultPreviewLength(int resultPreviewLength) {
+            this.resultPreviewLength = resultPreviewLength;
+        }
+
+        public int getMaxInputChars() {
+            return maxInputChars;
+        }
+
+        public void setMaxInputChars(int maxInputChars) {
+            this.maxInputChars = maxInputChars;
+        }
+
+        public QwenVl getQwenVl() {
+            return qwenVl;
+        }
+
+        public void setQwenVl(QwenVl qwenVl) {
+            this.qwenVl = qwenVl;
+        }
+    }
+
+    public static class QwenVl {
+
+        private String endpoint = "";
+        private String apiKey = "";
+        private String model = "qwen-vl-plus";
+        private int connectTimeoutMs = 5000;
+        private int readTimeoutMs = 120000;
+
+        public String getEndpoint() {
+            return endpoint;
+        }
+
+        public void setEndpoint(String endpoint) {
+            this.endpoint = endpoint;
+        }
+
+        public String getApiKey() {
+            return apiKey;
+        }
+
+        public void setApiKey(String apiKey) {
+            this.apiKey = apiKey;
+        }
+
+        public String getModel() {
+            return model;
+        }
+
+        public void setModel(String model) {
+            this.model = model;
+        }
+
+        public int getConnectTimeoutMs() {
+            return connectTimeoutMs;
+        }
+
+        public void setConnectTimeoutMs(int connectTimeoutMs) {
+            this.connectTimeoutMs = connectTimeoutMs;
+        }
+
+        public int getReadTimeoutMs() {
+            return readTimeoutMs;
+        }
+
+        public void setReadTimeoutMs(int readTimeoutMs) {
+            this.readTimeoutMs = readTimeoutMs;
+        }
+    }
+}

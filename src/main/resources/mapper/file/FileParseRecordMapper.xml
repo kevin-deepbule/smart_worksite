@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xd.smartworksite.file.mapper.FileParseRecordMapper">
+
+    <resultMap id="FileParseRecordResultMap" type="com.xd.smartworksite.file.domain.FileParseRecord">
+        <id property="id" column="id"/>
+        <result property="projectId" column="project_id"/>
+        <result property="fileId" column="file_id"/>
+        <result property="sourceFileHash" column="source_file_hash"/>
+        <result property="sourceContentType" column="source_content_type"/>
+        <result property="parseType" column="parse_type"/>
+        <result property="resultFormat" column="result_format"/>
+        <result property="parserProvider" column="parser_provider"/>
+        <result property="parserModel" column="parser_model"/>
+        <result property="status" column="status"/>
+        <result property="progress" column="progress"/>
+        <result property="currentStage" column="current_stage"/>
+        <result property="resultObjectName" column="result_object_name"/>
+        <result property="resultFileId" column="result_file_id"/>
+        <result property="contentPreview" column="content_preview"/>
+        <result property="errorMessage" column="error_message"/>
+        <result property="metadata" column="metadata"/>
+        <result property="startedAt" column="started_at"/>
+        <result property="finishedAt" column="finished_at"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <sql id="FileParseRecordColumns">
+        id, project_id, file_id, source_file_hash, source_content_type, parse_type, result_format,
+        parser_provider, parser_model, status, progress, current_stage, result_object_name,
+        result_file_id, content_preview, error_message, metadata, started_at, finished_at,
+        created_at, updated_at
+    </sql>
+
+    <insert id="insert" parameterType="com.xd.smartworksite.file.domain.FileParseRecord"
+            useGeneratedKeys="true" keyProperty="id">
+        insert into file_parse_record (
+            project_id, file_id, source_file_hash, source_content_type, parse_type, result_format,
+            parser_provider, parser_model, status, progress, current_stage, metadata, deleted
+        ) values (
+            #{projectId}, #{fileId}, #{sourceFileHash}, #{sourceContentType}, #{parseType}, #{resultFormat},
+            #{parserProvider}, #{parserModel}, #{status}, #{progress}, #{currentStage}, #{metadata}, 0
+        )
+    </insert>
+
+    <select id="selectById" resultMap="FileParseRecordResultMap">
+        select <include refid="FileParseRecordColumns"/>
+        from file_parse_record
+        where id = #{recordId}
+          and deleted = 0
+    </select>
+
+    <select id="selectByFileId" resultMap="FileParseRecordResultMap">
+        select <include refid="FileParseRecordColumns"/>
+        from file_parse_record
+        where project_id = #{projectId}
+          and file_id = #{fileId}
+          and deleted = 0
+        order by created_at desc, id desc
+    </select>
+
+    <select id="selectLatestByFileId" resultMap="FileParseRecordResultMap">
+        select <include refid="FileParseRecordColumns"/>
+        from file_parse_record
+        where project_id = #{projectId}
+          and file_id = #{fileId}
+          and deleted = 0
+        order by created_at desc, id desc
+        limit 1
+    </select>
+
+    <select id="selectReusable" resultMap="FileParseRecordResultMap">
+        select <include refid="FileParseRecordColumns"/>
+        from file_parse_record
+        where project_id = #{projectId}
+          and file_id = #{fileId}
+          and source_file_hash = #{sourceFileHash}
+          and result_format = #{resultFormat}
+          and status = 'SUCCEEDED'
+          and result_object_name is not null
+          and deleted = 0
+        order by finished_at desc, id desc
+        limit 1
+    </select>
+
+    <update id="updateRunning">
+        update file_parse_record
+        set status = 'RUNNING',
+            current_stage = #{stage},
+            progress = #{progress},
+            started_at = coalesce(started_at, current_timestamp),
+            updated_at = current_timestamp
+        where id = #{recordId}
+          and deleted = 0
+    </update>
+
+    <update id="updateSucceeded" parameterType="com.xd.smartworksite.file.domain.FileParseRecord">
+        update file_parse_record
+        set status = 'SUCCEEDED',
+            progress = 100,
+            current_stage = #{currentStage},
+            result_object_name = #{resultObjectName},
+            result_file_id = #{resultFileId},
+            content_preview = #{contentPreview},
+            error_message = null,
+            metadata = #{metadata},
+            finished_at = current_timestamp,
+            updated_at = current_timestamp
+        where id = #{id}
+          and deleted = 0
+    </update>
+
+    <update id="updateFailed">
+        update file_parse_record
+        set status = 'FAILED',
+            current_stage = #{stage},
+            error_message = #{errorMessage},
+            finished_at = current_timestamp,
+            updated_at = current_timestamp
+        where id = #{recordId}
+          and deleted = 0
+    </update>
+</mapper>

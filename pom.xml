@@ -22,6 +22,8 @@
         <mybatis-spring-boot.version>3.0.4</mybatis-spring-boot.version>
         <pagehelper-spring-boot.version>2.1.0</pagehelper-spring-boot.version>
         <minio.version>8.5.12</minio.version>
+        <pdfbox.version>2.0.31</pdfbox.version>
+        <poi.version>5.2.5</poi.version>
     </properties>
 
     <dependencies>
@@ -55,6 +57,21 @@
             <groupId>io.minio</groupId>
             <artifactId>minio</artifactId>
             <version>${minio.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>${pdfbox.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>${poi.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-scratchpad</artifactId>
+            <version>${poi.version}</version>
         </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>
