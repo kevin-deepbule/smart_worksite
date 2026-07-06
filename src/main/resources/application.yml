@@ -66,3 +66,9 @@ app:
         model: ${QWEN_VL_MODEL:qwen-vl-plus}
         connect-timeout-ms: ${QWEN_VL_CONNECT_TIMEOUT_MS:5000}
         read-timeout-ms: ${QWEN_VL_READ_TIMEOUT_MS:120000}
+  report:
+    crypto-agent-v3:
+      base-url: ${CRYPTO_AGENT_V3_BASE_URL:http://127.0.0.1:8012}
+      invoke-path: ${CRYPTO_AGENT_V3_INVOKE_PATH:/v1/report-generation/invoke}
+      connect-timeout-seconds: ${CRYPTO_AGENT_V3_CONNECT_TIMEOUT_SECONDS:5}
+      read-timeout-seconds: ${CRYPTO_AGENT_V3_READ_TIMEOUT_SECONDS:3000000}

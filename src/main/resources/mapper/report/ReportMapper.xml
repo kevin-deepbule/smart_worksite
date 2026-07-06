@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.xd.smartworksite.report.mapper.ReportMapper">
+
+    <resultMap id="ReportResultMap" type="com.xd.smartworksite.report.domain.Report">
+        <id property="id" column="id"/>
+        <result property="projectId" column="project_id"/>
+        <result property="configId" column="config_id"/>
+        <result property="taskId" column="task_id"/>
+        <result property="reportName" column="report_name"/>
+        <result property="reportType" column="report_type"/>
+        <result property="templateId" column="template_id"/>
+        <result property="engineType" column="engine_type"/>
+        <result property="currentVersionId" column="current_version_id"/>
+        <result property="status" column="status"/>
+        <result property="progress" column="progress"/>
+        <result property="previewUrl" column="preview_url"/>
+        <result property="errorMessage" column="error_message"/>
+        <result property="startedAt" column="started_at"/>
+        <result property="finishedAt" column="finished_at"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+
+
+    <resultMap id="ReportConfigResultMap" type="com.xd.smartworksite.report.domain.ReportConfig">
+        <id property="id" column="id"/>
+        <result property="projectId" column="project_id"/>
+        <result property="configName" column="config_name"/>
+        <result property="reportType" column="report_type"/>
+        <result property="templateId" column="template_id"/>
+        <result property="referenceFileIds" column="reference_file_ids"/>
+        <result property="knowledgeBaseIds" column="knowledge_base_ids"/>
+        <result property="dataSourceIds" column="data_source_ids"/>
+        <result property="generationParams" column="generation_params"/>
+        <result property="status" column="status"/>
+    </resultMap>
+
+    <resultMap id="FileObjectResultMap" type="com.xd.smartworksite.template.domain.FileObjectRecord">
+        <id property="id" column="id"/>
+        <result property="projectId" column="project_id"/>
+        <result property="bizType" column="biz_type"/>
+        <result property="bizId" column="biz_id"/>
+        <result property="fileName" column="file_name"/>
+        <result property="objectName" column="object_name"/>
+        <result property="contentType" column="content_type"/>
+        <result property="fileSize" column="file_size"/>
+        <result property="status" column="status"/>
+        <result property="metadata" column="metadata"/>
+    </resultMap>
+
+    <sql id="ReportColumns">
+        id, project_id, config_id, task_id, report_name, report_type, template_id,
+        engine_type, current_version_id, status, progress, preview_url, error_message,
+        started_at, finished_at, created_at, updated_at
+    </sql>
+
+    <insert id="insertReportConfig" useGeneratedKeys="true" keyProperty="id">
+        insert into report_config (
+            project_id, config_name, report_type, template_id, reference_file_ids,
+            knowledge_base_ids, data_source_ids, generation_params, status,
+            created_by, updated_by
+        ) values (
+            #{projectId}, #{configName}, #{reportType}, #{templateId}, #{referenceFileIds},
+            #{knowledgeBaseIds}, #{dataSourceIds}, #{generationParams}, #{status},
+            1, 1
+        )
+    </insert>
+
+    <insert id="insertReport" useGeneratedKeys="true" keyProperty="id">
+        insert into report (
+            project_id, config_id, task_id, report_name, report_type, template_id,
+            engine_type, status, progress, created_by, updated_by
+        ) values (
+            #{projectId}, #{configId}, #{taskId}, #{reportName}, #{reportType}, #{templateId},
+            #{engineType}, #{status}, #{progress}, 1, 1
+        )
+    </insert>
+
+    <insert id="insertGenerateTask" useGeneratedKeys="true" keyProperty="id">
+        insert into generate_task (
+            project_id, task_type, biz_type, biz_id, status, current_stage,
+            max_retry_count, created_by, updated_by
+        ) values (
+            #{projectId}, #{taskType}, #{bizType}, #{bizId}, #{status}, #{currentStage},
+            #{maxRetryCount}, 1, 1
+        )
+    </insert>
+
+    <update id="updateReportTask">
+        update report
+        set task_id = #{taskId}, updated_by = 1
+        where id = #{reportId}
+          and deleted = 0
+    </update>
+
+    <update id="updateTaskBizId">
+        update generate_task
+        set biz_id = #{bizId}, updated_by = 1
+        where id = #{taskId}
+          and deleted = 0
+    </update>
+
+    <select id="selectReportById" resultMap="ReportResultMap">
+        select <include refid="ReportColumns"/>
+        from report
+        where id = #{reportId}
+          and deleted = 0
+    </select>
+
+    <select id="selectReportPage" resultMap="ReportResultMap">
+        select <include refid="ReportColumns"/>
+        from report
+        where deleted = 0
+        <if test="projectId != null">
+            and project_id = #{projectId}
+        </if>
+        <if test="reportType != null and reportType != ''">
+            and report_type = #{reportType}
+        </if>
+        <if test="status != null and status != ''">
+            and status = #{status}
+        </if>
+        <if test="keyword != null and keyword != ''">
+            and report_name like concat('%', #{keyword}, '%')
+        </if>
+        order by created_at desc, id desc
+    </select>
+
+    <update id="updateReportProcessing">
+        update report
+        set status = #{status},
+            progress = #{progress},
+            started_at = coalesce(started_at, current_timestamp),
+            updated_by = 1
+        where id = #{reportId}
+          and deleted = 0
+    </update>
+
+    <update id="updateReportSuccess">
+        update report
+        set current_version_id = #{versionId},
+            status = #{status},
+            progress = #{progress},
+            preview_url = #{previewUrl},
+            finished_at = current_timestamp,
+            updated_by = 1
+        where id = #{reportId}
+          and deleted = 0
+    </update>
+
+    <update id="updateReportFailed">
+        update report
+        set status = #{status},
+            error_message = #{errorMessage},
+            finished_at = current_timestamp,
+            updated_by = 1
+        where id = #{reportId}
+          and deleted = 0
+    </update>
+
+    <update id="updateTaskStatus">
+        update generate_task
+        set status = #{status},
+            current_stage = #{currentStage},
+            error_message = #{errorMessage},
+            started_at = case when #{status} = 'PROCESSING' then coalesce(started_at, current_timestamp) else started_at end,
+            finished_at = case when #{status} in ('SUCCESS', 'FAILED') then current_timestamp else finished_at end,
+            updated_by = 1
+        where id = #{taskId}
+          and deleted = 0
+    </update>
+
+    <select id="selectFileObjectById" resultMap="FileObjectResultMap">
+        select id, project_id, biz_type, biz_id, file_name, object_name, content_type,
+               file_size, status, metadata
+        from file_object
+        where id = #{fileId}
+          and deleted = 0
+    </select>
+
+    <insert id="insertFileObject" useGeneratedKeys="true" keyProperty="id">
+        insert into file_object (
+            project_id, biz_type, biz_id, file_name, object_name, content_type,
+            file_size, status, metadata, created_by, updated_by
+        ) values (
+            #{projectId}, #{bizType}, #{bizId}, #{fileName}, #{objectName}, #{contentType},
+            #{fileSize}, #{status}, #{metadata}, 1, 1
+        )
+    </insert>
+
+    <insert id="insertReportVersion" useGeneratedKeys="true" keyProperty="id">
+        insert into report_version (
+            project_id, report_id, version_no, word_file_id, pdf_file_id,
+            source_snapshot, engine_response, content_hash, status, error_message,
+            created_by, updated_by
+        ) values (
+            #{projectId}, #{reportId}, #{versionNo}, #{wordFileId}, #{pdfFileId},
+            #{sourceSnapshot}, #{engineResponse}, #{contentHash}, #{status}, #{errorMessage},
+            1, 1
+        )
+    </insert>
+
+    <update id="updateReportVersionWordFile">
+        update report_version
+        set word_file_id = #{wordFileId},
+            content_hash = #{contentHash},
+            updated_by = 1
+        where id = #{versionId}
+          and deleted = 0
+    </update>
+
+    <select id="selectConfigById" resultMap="ReportConfigResultMap">
+        select id, project_id, config_name, report_type, template_id, reference_file_ids,
+               knowledge_base_ids, data_source_ids, generation_params, status
+        from report_config
+        where id = #{configId}
+          and deleted = 0
+    </select>
+
+    <select id="selectCurrentWordFileId" resultType="java.lang.Long">
+        select rv.word_file_id
+        from report r
+        join report_version rv on rv.id = r.current_version_id and rv.deleted = 0
+        where r.id = #{reportId}
+          and r.deleted = 0
+          and rv.word_file_id is not null
+    </select>
+
+</mapper>
