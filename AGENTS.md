@@ -4,25 +4,30 @@ This file describes collaboration rules for the Smart Worksite backend. Read `RE
 
 ## Project Positioning
 
-This repository contains the Smart Worksite AI application. The existing root-level `src/`, `pom.xml`, and `deploy/` are the Spring Boot backend scaffold. Frontend work must live under `frontend/`.
+This repository contains the Smart Worksite large-model application. The root-level `src/`, `pom.xml`, and `deploy/` are the Java Spring Boot backend main system. Frontend work must live under `frontend/`.
 
-The current phase focuses on engineering foundations, not full implementations of Q&A, compliance review, report generation, or OCR. AI, RAG, OCR, vector database, and large-model capabilities should be integrated later through external service adapters.
+The target system covers project data, knowledge bases, Q&A, compliance review, report generation, OCR recognition, async tasks, permission security, and audit tracing. Enterprise business capabilities belong in the Java backend; large-model, Agent, RAG, Embedding, OCR algorithm, vector retrieval, and document-parsing capabilities belong in external Python intelligent algorithm services and are integrated by the Java backend through REST/internal service adapters. Frontend must not directly call Python services, databases, MinIO, vector databases, or OCR engines.
 
 ## Tech Stack
 
-Backend:
+Backend main system:
 
 - Java 17
 - Spring Boot 3.3.x
-- Maven
-- MyBatis + XML
-- PageHelper
-- MySQL 8
-- Redis
-- MinIO
-- Flyway
+- Spring Web for REST APIs
+- Spring Validation for Bean Validation
+- Spring Data Redis for Redis access
+- Spring Boot Actuator for health checks and runtime status
+- Maven for build and dependency management
+- MyBatis + XML for data access
+- PageHelper for pagination
+- MySQL Connector/J for MySQL access
+- Flyway for database migrations
+- MinIO Java SDK for object storage
+- Apache PDFBox for PDF processing
+- Apache POI for Word, Excel, and PPT processing
 
-Frontend:
+Frontend application:
 
 - Vue 3
 - TypeScript
@@ -31,7 +36,35 @@ Frontend:
 - Vue Router
 - Axios
 - Element Plus
+- `@element-plus/icons-vue`
 - npm
+
+Python intelligent algorithm service:
+
+- Python
+- Large-model calls for Q&A, compliance review, and report generation
+- Agent orchestration for task decomposition, tool calling, multi-step reasoning, and business workflow coordination
+- RAG retrieval augmentation for project knowledge bases, policy/standard libraries, and industry material libraries
+- Embedding vectorization for document chunks and semantic retrieval
+- OCR recognition for ID cards, license plates, invoices, contracts, and custom fields
+- Document parsing for content extraction, layout understanding, and table recognition
+- CryptoAgentV3 as the current external Python report-generation integration
+
+Data and infrastructure:
+
+- MySQL 8 for business metadata, permission data, task data, audit logs, and file metadata
+- Redis 7 for cache, lightweight queues, distributed locks, and task status acceleration
+- MinIO for documents, images, templates, and generated reports
+- Docker Compose for local MySQL, Redis, and MinIO
+- Milvus or pgvector for planned knowledge-base vector retrieval
+
+Integration boundaries:
+
+- Frontend calls only Java backend REST APIs.
+- Java backend owns authentication, authorization, project isolation, business orchestration, status records, file persistence, and audit tracing.
+- Java backend integrates Python intelligent algorithm services through REST APIs or internal service interfaces.
+- Large models, OCR engines, vector databases, business databases, and object storage are not directly exposed to the frontend.
+- Cross-service calls must record request summary, response summary, elapsed time, status, and error information.
 
 ## Local Dependencies
 
@@ -41,7 +74,7 @@ copy .env.example .env
 docker compose -f docker-compose-env.yml --env-file .env up -d
 ```
 
-Docker starts MySQL, Redis, and MinIO only. Business tables are created by Flyway. Do not create business tables through Docker initialization SQL.
+Docker starts MySQL, Redis, and MinIO only. Business tables are created by Flyway. Do not create business tables through Docker initialization SQL. Vector retrieval components such as Milvus or pgvector are planned separately and are not part of the current local Docker dependency set unless explicitly added.
 
 ## Package Structure
 
@@ -50,18 +83,19 @@ Root package: `com.xd.smartworksite`.
 Main modules:
 
 - `common`: shared response, exception, request ID, MyBatis config, and Redis helpers.
-- `system`: ping, version, and runtime status.
-- `auth`: users, roles, permissions, and login.
+- `system`: ping, health, version, and runtime status.
+- `auth`: users, roles, permissions, login, and project-level access control.
 - `project`: worksite projects, members, and project isolation foundation.
-- `file`: file metadata and MinIO adapter.
-- `knowledge`: knowledge bases and documents.
-- `datasource`: business data source configuration.
-- `qa`: Q&A.
-- `review`: compliance review.
-- `report`: report templates, records, and versions.
-- `ocr`: OCR records.
-- `task`: async tasks and stage logs.
-- `audit`: audit logs and external call logs.
+- `file`: file metadata, upload/download, parsing records, and MinIO adapter.
+- `template`: report/review/common template metadata and file binding.
+- `knowledge`: knowledge bases, documents, indexing status, and retrieval-facing metadata.
+- `datasource`: business data source configuration and database Q&A foundations.
+- `qa`: Q&A sessions, answers, citations, feedback, and model/RAG integration records.
+- `review`: compliance templates, review tasks, issue lists, suggestions, and JSON results.
+- `report`: report templates, records, versions, downloads, and CryptoAgentV3 integration.
+- `ocr`: OCR records, recognition types, structured fields, and result JSON.
+- `task`: async tasks, statuses, retries, cancellation, timeouts, and stage logs.
+- `audit`: operation audit logs, access logs, model calls, retrieval logs, OCR calls, and external call logs.
 
 Business modules may use these layers as needed: `controller`, `application`, `domain`, `repository`, `mapper`, `dto`, `infra`.
 
@@ -73,7 +107,7 @@ Business modules may use these layers as needed: `controller`, `application`, `d
 - Domain objects express business concepts, enums, state transitions, and core rules.
 - Repositories provide business-facing persistence interfaces. MyBatis implementations should be named `MyBatisXxxRepository`.
 - Mappers only handle SQL mapping. Prefer XML for complex SQL.
-- Infra contains Redis, MinIO, external HTTP, and other technical adapters.
+- Infra contains Redis, MinIO, external HTTP, Python algorithm service, model, OCR, vector retrieval, and other technical adapters.
 - Controllers must not directly call mappers, Redis, MinIO, or external services.
 - Modules must not directly call another module's mapper.
 - Cross-module collaboration should go through the other module's application service or facade.
@@ -101,7 +135,9 @@ Request IDs are handled by `common.config.RequestIdFilter`. The response header 
 - Request objects are named `XxxRequest` or `XxxCommand`.
 - Response objects are named `XxxResponse`; do not return sensitive database fields.
 - Do not put business decisions in controllers or MyBatis XML.
-- External service calls must define timeout, error mapping, and call logging.
+- External service calls must define timeout, error mapping, retry/timeout policy where applicable, and call logging.
+- AI, RAG, OCR, Embedding, vector retrieval, and document-parsing integrations must be adapter-based; do not implement algorithm core logic in Java controllers or application services.
+- Long-running operations such as report generation, OCR recognition, knowledge indexing, and document parsing must use async tasks or status records instead of blocking HTTP requests for the whole job.
 - Logs must not print passwords, tokens, MinIO secrets, or production credentials.
 - Run `mvn test` after adding runnable functionality.
 
@@ -110,7 +146,10 @@ Request IDs are handled by `common.config.RequestIdFilter`. The response header 
 - Read `README.md`, this file, and related module code before editing.
 - Follow the existing package structure and layer boundaries.
 - Keep changes focused and avoid unrelated refactors.
-- If changing public contracts, database schema, external APIs, or collaboration rules, update docs as well.
+- For every project content change, update `AGENTS.md` and the relevant files under `docs/` in the same change set.
+- Documentation updates are required for changes to code, APIs, configuration, technical stack, database schema, module boundaries, startup steps, deployment, or collaboration rules.
+- Documentation updates are not required for read-only investigation, temporary debugging commands, log inspection, or other actions that do not change project content.
+- If changing public contracts, database schema, external APIs, technical stack decisions, or collaboration rules, update docs as well.
 - The workspace may contain user changes; never revert unrelated files.
 - Do not write real secrets, accounts, or production addresses into generated SQL, config, or examples.
 
