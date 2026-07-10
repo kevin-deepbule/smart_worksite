@@ -26,6 +26,7 @@ const form = reactive<{ reportName: string; reportType: string; templateId: ID |
   reportType: 'SAFETY_MONTHLY',
   templateId: ''
 });
+
 const templateEmpty = computed(() => !templates.value.length && !templateWarning.value);
 const canCreate = computed(() => Boolean(form.reportName.trim() && form.reportType && form.templateId));
 
@@ -71,17 +72,21 @@ function reset() {
 async function submitCreate() {
   if (!form.reportName.trim()) return ElMessage.warning('请填写报告名称');
   if (!form.reportType) return ElMessage.warning('请选择报告类型');
-  if (!form.templateId) return ElMessage.warning('后端要求 templateId 必填，请先选择报告模板');
+  if (!form.templateId) return ElMessage.warning('请选择报告模板');
   creating.value = true;
   error.value = '';
   try {
-    await createReport({
+    const result = await createReport({
       projectId: projectStore.currentProject?.projectId || 0,
       reportName: form.reportName,
       reportType: form.reportType,
       templateId: form.templateId
     });
-    ElMessage.success('报告创建成功');
+    if (result.status === 'FAILED') {
+      ElMessage.warning('报告任务已创建，但生成失败，请进入详情查看失败原因');
+    } else {
+      ElMessage.success('报告创建成功');
+    }
     dialogVisible.value = false;
     form.reportName = '';
     await loadData();
@@ -128,8 +133,8 @@ onMounted(loadData);
       :fields="[
         { prop: 'keyword', label: '关键词' },
         { prop: 'status', label: '状态', type: 'select', options: [
-          { label: '成功', value: 'SUCCESS' },
-          { label: '处理中', value: 'PROCESSING' },
+          { label: '已完成', value: 'COMPLETED' },
+          { label: '生成中', value: 'GENERATING' },
           { label: '失败', value: 'FAILED' }
         ] }
       ]"

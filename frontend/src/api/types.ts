@@ -1,5 +1,5 @@
 export type ID = string | number;
-export type Status = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'SUCCESS' | 'FAILED' | 'ACTIVE' | 'ENABLED' | 'DISABLED' | 'ARCHIVED' | 'CANCELLED';
+export type Status = 'PENDING' | 'PROCESSING' | 'RUNNING' | 'GENERATING' | 'COMPLETED' | 'SUCCESS' | 'FAILED' | 'ACTIVE' | 'ENABLED' | 'DISABLED' | 'ARCHIVED' | 'CANCELLED';
 
 export interface PageQuery {
   pageNo?: number;
@@ -194,9 +194,12 @@ export interface ReportItem {
   reportName: string;
   reportType: string;
   templateId: ID;
+  engineType?: string;
   version: string;
   status: Status;
   progress: number;
+  previewUrl?: string;
+  errorMessage?: string;
   createdBy: string;
   createdAt: string;
   updatedAt: string;

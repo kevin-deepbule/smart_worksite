@@ -94,8 +94,8 @@ export function updateProjectStatus(projectId: ID, status: string) {
 }
 
 const mockMembers: ProjectMember[] = [
-  { id: 1, userId: 1, projectId: 1001, realName: '?????', roleName: '?????', permissions: ['*'], status: 'ACTIVE', createdAt: '2026-07-01T09:00:00+08:00' },
-  { id: 2, userId: 2, projectId: 1001, realName: '???', roleName: '???', permissions: ['review:view', 'ocr:view'], status: 'ACTIVE', createdAt: '2026-07-02T09:00:00+08:00' }
+  { id: 1, userId: 1, projectId: 1001, realName: '项目管理员', roleName: '项目管理员', permissions: ['*'], status: 'ACTIVE', createdAt: '2026-07-01T09:00:00+08:00' },
+  { id: 2, userId: 2, projectId: 1001, realName: '审核员', roleName: '审核员', permissions: ['review:view', 'ocr:view'], status: 'ACTIVE', createdAt: '2026-07-02T09:00:00+08:00' }
 ];
 
 export async function fetchProjectMembers(projectId: ID) {
@@ -105,8 +105,8 @@ export async function fetchProjectMembers(projectId: ID) {
 }
 
 export async function addProjectMember(projectId: ID, data: { userId: ID; roleName: string }) {
-  if (useMock) return { id: Date.now(), projectId, userId: data.userId, realName: `??${data.userId}`, roleName: data.roleName, permissions: [], status: 'ACTIVE', createdAt: new Date().toISOString() } satisfies ProjectMember;
-  throw new Error('???????????');
+  if (useMock) return { id: Date.now(), projectId, userId: data.userId, realName: `用户${data.userId}`, roleName: data.roleName, permissions: [], status: 'ACTIVE', createdAt: new Date().toISOString() } satisfies ProjectMember;
+  throw new Error('项目成员新增接口暂未接入');
 }
 
 export async function fetchProjectPermissions(projectId: ID) {

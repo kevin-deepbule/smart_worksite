@@ -160,6 +160,7 @@ Request IDs are handled by `common.config.RequestIdFilter`. The response header 
 - Frontend code must be placed in `frontend/`.
 - Do not modify backend `src/`, `pom.xml`, or `deploy/` for frontend-only tasks unless explicitly requested.
 - Use `npm` for frontend package management.
+- Frontend source files containing Chinese text must be saved as UTF-8 and must not contain mojibake or `????` placeholders.
 - API base URL must be read from `.env` as `VITE_API_BASE_URL`.
 - Development may use mock data when the backend API is not available.
 - All HTTP calls must go through `frontend/src/utils/request.ts`.

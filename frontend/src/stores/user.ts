@@ -5,6 +5,12 @@ import type { UserInfo } from '../api/types';
 const tokenKey = 'smart_worksite_token';
 const userKey = 'smart_worksite_user';
 
+const permissionAliases: Record<string, string[]> = {
+  'file:view': ['file:manage'],
+  'template:view': ['file:manage'],
+  'audit:view': ['system:manage']
+};
+
 function readStoredUser() {
   const raw = localStorage.getItem(userKey);
   if (!raw) return null;
@@ -77,7 +83,9 @@ export const useUserStore = defineStore('user', {
       localStorage.removeItem(tokenKey);
     },
     hasPermission(permission?: string) {
-      return !permission || this.permissions.includes(permission);
+      if (!permission) return true;
+      if (this.permissions.includes(permission)) return true;
+      return (permissionAliases[permission] || []).some((alias) => this.permissions.includes(alias));
     }
   }
 });

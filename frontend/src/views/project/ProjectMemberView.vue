@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import * as memberApi from '../../api/member';
 import * as userApi from '../../api/user';
@@ -11,6 +11,8 @@ const projectId = ref<string | number>(projectStore.currentProjectId || '');
 const members = ref<ProjectMemberItem[]>([]);
 const allUsers = ref<UserItem[]>([]);
 const loading = ref(false);
+const userLoading = ref(false);
+const submitting = ref(false);
 
 const dialogVisible = ref(false);
 const editingUserId = ref<number | string | null>(null);
@@ -22,32 +24,39 @@ const PROJECT_ROLES = [
   { value: 'VIEWER', label: '只读用户' }
 ];
 
-const roleLabel = (r: string) => PROJECT_ROLES.find(p => p.value === r)?.label || r;
+const roleLabel = (role: string) => PROJECT_ROLES.find((item) => item.value === role)?.label || role;
+const existingUserIds = computed(() => new Set(members.value.map((member) => String(member.userId))));
+const availableUsers = computed(() => allUsers.value.filter((user) => user.status === 'ENABLED' && !existingUserIds.value.has(String(user.id))));
 
 async function fetchMembers() {
   if (!projectId.value) return;
   loading.value = true;
-  try { members.value = await memberApi.listMembers(projectId.value); }
-  catch { /* handled */ } finally { loading.value = false; }
+  try {
+    members.value = await memberApi.listMembers(projectId.value);
+  } finally {
+    loading.value = false;
+  }
 }
 
 async function fetchUsers() {
+  userLoading.value = true;
   try {
-    const res = await userApi.listUsers({ pageSize: 200 });
+    const res = await userApi.listUsers({ pageNo: 1, pageSize: 100, status: 'ENABLED' });
     allUsers.value = res.records;
-  } catch { /* handled */ }
+  } finally {
+    userLoading.value = false;
+  }
 }
 
-onMounted(() => { fetchMembers(); fetchUsers(); });
+onMounted(async () => {
+  await Promise.all([fetchMembers(), fetchUsers()]);
+});
 
-const existingUserIds = () => new Set(members.value.map(m => String(m.userId)));
-
-const availableUsers = () => allUsers.value.filter(u => !existingUserIds().has(String(u.id)));
-
-function openAdd() {
+async function openAdd() {
   editingUserId.value = null;
   form.value = { userId: '', projectRole: 'BUSINESS_USER' };
   dialogVisible.value = true;
+  await Promise.all([fetchMembers(), fetchUsers()]);
 }
 
 function openEdit(row: ProjectMemberItem) {
@@ -57,9 +66,15 @@ function openEdit(row: ProjectMemberItem) {
 }
 
 async function submit() {
-  if (!form.value.userId && editingUserId.value == null) {
-    ElMessage.error('请选择用户'); return;
+  if (!projectId.value) {
+    ElMessage.error('请先选择项目');
+    return;
   }
+  if (!form.value.userId && editingUserId.value == null) {
+    ElMessage.error('请选择用户');
+    return;
+  }
+  submitting.value = true;
   try {
     if (editingUserId.value == null) {
       await memberApi.addMember(projectId.value, { userId: form.value.userId, projectRole: form.value.projectRole });
@@ -69,17 +84,17 @@ async function submit() {
       ElMessage.success('角色更新成功');
     }
     dialogVisible.value = false;
-    fetchMembers();
-  } catch { /* handled */ }
+    await fetchMembers();
+  } finally {
+    submitting.value = false;
+  }
 }
 
 async function remove(row: ProjectMemberItem) {
-  await ElMessageBox.confirm(`确认移除成员 "${row.displayName || row.username}"？`, '提示', { type: 'warning' });
-  try {
-    await memberApi.removeMember(projectId.value, row.userId);
-    ElMessage.success('已移除');
-    fetchMembers();
-  } catch { /* handled */ }
+  await ElMessageBox.confirm(`确认移除成员“${row.displayName || row.username}”？`, '提示', { type: 'warning' });
+  await memberApi.removeMember(projectId.value, row.userId);
+  ElMessage.success('已移除');
+  await fetchMembers();
 }
 </script>
 
@@ -92,7 +107,7 @@ async function remove(row: ProjectMemberItem) {
 
     <el-table :data="members" v-loading="loading" stripe>
       <el-table-column prop="username" label="用户名" width="140" />
-      <el-table-column prop="displayName" label="显示名称" width="140" />
+      <el-table-column prop="displayName" label="显示名称" width="160" />
       <el-table-column label="项目角色" width="140">
         <template #default="{ row }">
           <el-tag size="small" :type="row.projectRole === 'PROJECT_ADMIN' ? 'primary' : row.projectRole === 'VIEWER' ? 'info' : 'success'">
@@ -107,10 +122,10 @@ async function remove(row: ProjectMemberItem) {
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="createdAt" label="加入时间" width="160">
+      <el-table-column prop="createdAt" label="加入时间" width="180">
         <template #default="{ row }">{{ row.createdAt?.replace('T', ' ').slice(0, 19) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="140" fixed="right">
+      <el-table-column label="操作" width="150" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">修改角色</el-button>
           <el-button link type="danger" @click="remove(row)">移除</el-button>
@@ -120,26 +135,35 @@ async function remove(row: ProjectMemberItem) {
 
     <el-dialog v-model="dialogVisible" :title="editingUserId == null ? '添加成员' : '修改角色'" width="400px" destroy-on-close>
       <el-form label-width="90px">
-        <el-form-item label="选择用户" v-if="editingUserId == null">
-          <el-select v-model="form.userId" filterable style="width:100%">
-            <el-option v-for="u in availableUsers()" :key="u.id" :label="`${u.displayName} (${u.username})`" :value="u.id" />
+        <el-form-item v-if="editingUserId == null" label="选择用户">
+          <el-select v-model="form.userId" filterable :loading="userLoading" style="width: 100%" placeholder="请选择用户">
+            <el-option v-for="user in availableUsers" :key="user.id" :label="`${user.displayName} (${user.username})`" :value="user.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="项目角色">
-          <el-select v-model="form.projectRole" style="width:100%">
-            <el-option v-for="r in PROJECT_ROLES" :key="r.value" :label="r.label" :value="r.value" />
+          <el-select v-model="form.projectRole" style="width: 100%">
+            <el-option v-for="role in PROJECT_ROLES" :key="role.value" :label="role.label" :value="role.value" />
           </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submit">确定</el-button>
+        <el-button type="primary" :loading="submitting" @click="submit">确定</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <style scoped>
-.page-header { display:flex;justify-content:space-between;align-items:center;margin-bottom:16px }
-.page-header h2 { margin:0;font-size:18px }
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.page-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
 </style>

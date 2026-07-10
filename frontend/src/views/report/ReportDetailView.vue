@@ -74,6 +74,13 @@ onMounted(loadData);
     <el-alert v-if="error" :title="error" type="error" show-icon />
     <EmptyState v-if="!loading && (notFound || !report)" description="报告不存在或已删除" />
     <template v-else-if="report">
+      <el-alert
+        v-if="report.status === 'FAILED'"
+        :title="report.errorMessage || '报告尚未生成成功'"
+        type="error"
+        show-icon
+        style="margin-bottom: 12px"
+      />
       <div class="page-header">
         <div>
           <h2 class="page-title">报告详情</h2>
@@ -91,14 +98,15 @@ onMounted(loadData);
           <el-descriptions-item label="报告名称">{{ report.reportName }}</el-descriptions-item>
           <el-descriptions-item label="版本">{{ report.version }}</el-descriptions-item>
           <el-descriptions-item label="状态"><StatusTag :status="report.status" /></el-descriptions-item>
+          <el-descriptions-item v-if="report.errorMessage" label="失败原因" :span="3">{{ report.errorMessage }}</el-descriptions-item>
         </el-descriptions>
       </el-card>
 
       <div class="two-col">
         <el-card class="work-card">
           <h3 class="panel-title">报告预览</h3>
-          <p>本报告基于项目知识库、检查记录和 AI 生成内容形成。</p>
-          <p class="muted">在线预览后端接口待提供，当前可下载 Word 文件查看。</p>
+          <p>报告生成成功后可下载 Word 文件查看。</p>
+          <p class="muted">在线预览接口待后端提供。</p>
         </el-card>
         <el-card class="work-card">
           <h3 class="panel-title">生成进度</h3>

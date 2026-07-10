@@ -1,19 +1,22 @@
 ﻿<script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
-import { ElMessage } from 'element-plus';
+import { useRouter } from 'vue-router';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import AppTable from '../../components/common/AppTable.vue';
 import StatusTag from '../../components/common/StatusTag.vue';
 import EmptyState from '../../components/common/EmptyState.vue';
-import { createProject, fetchProjectMembers, fetchProjects, updateProject } from '../../api/project';
-import type { ProjectItem, ProjectMember } from '../../api/types';
+import { createProject, fetchProjects, updateProject, updateProjectStatus } from '../../api/project';
+import { listMembers } from '../../api/member';
+import type { ProjectItem, ProjectMemberItem } from '../../api/types';
 import { useProjectStore } from '../../stores/project';
 
 const projectStore = useProjectStore();
+const router = useRouter();
 const loading = ref(false);
 const saving = ref(false);
 const error = ref('');
 const projects = ref<ProjectItem[]>([]);
-const members = ref<ProjectMember[]>([]);
+const members = ref<ProjectMemberItem[]>([]);
 const activeProject = ref<ProjectItem | null>(null);
 const dialogVisible = ref(false);
 const form = reactive({ projectId: '', name: '', code: '', address: '', description: '' });
@@ -51,7 +54,7 @@ async function selectProject(project: ProjectItem) {
   activeProject.value = project;
   projectStore.projects = projects.value;
   projectStore.switchProject(project.projectId);
-  try { members.value = await fetchProjectMembers(project.projectId); }
+  try { members.value = await listMembers(project.projectId); }
   catch { members.value = []; }
 }
 
@@ -84,6 +87,21 @@ async function saveProject() {
   } finally { saving.value = false; }
 }
 
+async function toggleProjectStatus(row: ProjectItem) {
+  const enabled = ['ACTIVE', 'ENABLED'].includes(row.status);
+  const nextStatus = enabled ? 'DISABLED' : 'ENABLED';
+  const actionText = enabled ? '停用' : '启用';
+  await ElMessageBox.confirm(`确认${actionText}项目“${row.name || row.projectName}”？`, `${actionText}项目`, { type: 'warning' });
+  try {
+    await updateProjectStatus(row.projectId, nextStatus);
+    ElMessage.success(`项目已${actionText}`);
+    await loadProjects();
+  } catch (err) {
+    const detail = err instanceof Error && err.message ? ` ${err.message}` : '';
+    ElMessage.error(`项目${actionText}失败，请检查后端项目状态接口。${detail}`);
+  }
+}
+
 onMounted(loadProjects);
 </script>
 
@@ -99,14 +117,26 @@ onMounted(loadProjects);
         <AppTable :loading="loading" :error="error" :data="projects" :columns="[{prop:'name',label:'项目名称'},{prop:'code',label:'编码'},{prop:'status',label:'状态',slot:'status'}]">
           <template #empty><EmptyState description="暂无项目，请先创建项目。" /></template>
           <template #status="{ row }"><StatusTag :status="row.status" /></template>
-          <el-table-column label="操作" width="150"><template #default="{ row }"><el-button link type="primary" @click="selectProject(row)">成员</el-button><el-button link @click="openEdit(row)">编辑</el-button></template></el-table-column>
+          <el-table-column label="操作" width="210">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="selectProject(row)">成员</el-button>
+              <el-button link @click="openEdit(row)">编辑</el-button>
+              <el-button link :type="['ACTIVE', 'ENABLED'].includes(row.status) ? 'danger' : 'success'" @click="toggleProjectStatus(row)">
+                {{ ['ACTIVE', 'ENABLED'].includes(row.status) ? '停用' : '启用' }}
+              </el-button>
+            </template>
+          </el-table-column>
         </AppTable>
       </el-card>
       <el-card class="work-card">
-        <template #header><div class="member-head"><strong>{{ activeProject?.name || '项目成员' }}</strong><el-button size="small" disabled title="后端接口待提供">添加成员</el-button></div></template>
-        <el-alert title="项目成员接口待后端提供。" type="info" show-icon :closable="false" style="margin-bottom: 12px" />
-        <AppTable :data="members" :columns="[{prop:'realName',label:'成员'},{prop:'roleName',label:'角色'},{prop:'status',label:'状态',slot:'status'}]">
-          <template #empty><EmptyState description="项目成员接口待后端提供。" /></template>
+        <template #header>
+          <div class="member-head">
+            <strong>{{ activeProject?.name || '项目成员' }}</strong>
+            <el-button size="small" @click="router.push('/project/members')">成员管理</el-button>
+          </div>
+        </template>
+        <AppTable :data="members" :columns="[{prop:'displayName',label:'成员'},{prop:'projectRole',label:'角色'},{prop:'status',label:'状态',slot:'status'}]">
+          <template #empty><EmptyState description="暂无项目成员。" /></template>
           <template #status="{ row }"><StatusTag :status="row.status" /></template>
         </AppTable>
       </el-card>
