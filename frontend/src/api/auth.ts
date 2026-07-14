@@ -28,3 +28,8 @@ export async function logout() {
   if (useMock) return null;
   return request.post<null>('/auth/logout');
 }
+
+export async function changeCurrentPassword(data: { oldPassword: string; newPassword: string }) {
+  if (useMock) return null;
+  return request.put<null>('/auth/me/password', data);
+}

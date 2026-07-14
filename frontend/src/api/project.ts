@@ -1,6 +1,6 @@
 import request from '../utils/request';
 import { mockProjects } from '../mocks/project';
-import type { ID, PageQuery, PageResult, ProjectCreateForm, ProjectItem, ProjectStatistics, ProjectUpdateForm } from './types';
+import type { ID, PageQuery, PageResult, ProjectCreateForm, ProjectItem, ProjectSettings, ProjectStatistics, ProjectUpdateForm } from './types';
 import { useModuleMock } from './mock';
 
 const useMock = useModuleMock('VITE_USE_PROJECT_MOCK', false);
@@ -103,6 +103,42 @@ export function deleteProject(projectId: ID) {
 export function updateProjectStatus(projectId: ID, status: string) {
   if (useMock) return Promise.resolve();
   return request.put<void>(`/projects/${projectId}/status`, { status });
+}
+
+export function enableProject(projectId: ID) {
+  if (useMock) return Promise.resolve();
+  return request.post<void>(`/projects/${projectId}/enable`);
+}
+
+export function disableProject(projectId: ID) {
+  if (useMock) return Promise.resolve();
+  return request.post<void>(`/projects/${projectId}/disable`);
+}
+
+export function archiveProject(projectId: ID) {
+  if (useMock) return Promise.resolve();
+  return request.post<void>(`/projects/${projectId}/archive`);
+}
+
+export function fetchProjectSettings(projectId: ID) {
+  if (useMock) {
+    return Promise.resolve({
+      projectId,
+      dataRetentionDays: 365,
+      uploadMaxSizeMb: 100,
+      allowedFileTypes: ['docx', 'pdf', 'jpg', 'png'],
+      internetPolicyCrawlerEnabled: false,
+      defaultQaRouteMode: 'AUTO',
+      defaultOcrLanguage: 'zh-CN',
+      defaultReportExportFormat: 'WORD'
+    } satisfies ProjectSettings);
+  }
+  return request.get<ProjectSettings>(`/projects/${projectId}/settings`);
+}
+
+export function updateProjectSettings(projectId: ID, data: ProjectSettings) {
+  if (useMock) return Promise.resolve({ ...data, projectId } satisfies ProjectSettings);
+  return request.put<ProjectSettings>(`/projects/${projectId}/settings`, data);
 }
 
 export function fetchProjectStatistics(projectId: ID) {

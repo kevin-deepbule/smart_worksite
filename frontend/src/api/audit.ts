@@ -1,5 +1,5 @@
 ﻿import request from '../utils/request';
-import type { AuditLog, ID, PageQuery, PageResult } from './types';
+import type { AuditLog, ExternalCallLog, ID, PageQuery, PageResult } from './types';
 import { useModuleMock } from './mock';
 
 const useMock = useModuleMock('VITE_USE_AUDIT_MOCK', false);
@@ -15,4 +15,27 @@ export async function fetchAuditLogs(params: PageQuery & { objectType?: string; 
     return { pageNo: params.pageNo || 1, pageSize: params.pageSize || 20, total: records.length, records } satisfies PageResult<AuditLog>;
   }
   return request.get<PageResult<AuditLog>>('/audit/logs', { params });
+}
+
+export async function fetchExternalCallLogs(params: PageQuery & { serviceName?: string; callType?: string } = {}) {
+  if (useMock) {
+    return {
+      pageNo: params.pageNo || 1,
+      pageSize: params.pageSize || 20,
+      total: 1,
+      records: [{
+        id: 1,
+        projectId: params.projectId,
+        serviceName: 'python-ai-service',
+        callType: 'RAG_SEARCH',
+        requestId: 'REQ-MOCK-AI-001',
+        requestSummary: 'mock request summary',
+        responseSummary: 'mock response summary',
+        status: 'SUCCESS',
+        costMs: 238,
+        createdAt: new Date().toISOString()
+      }]
+    } satisfies PageResult<ExternalCallLog>;
+  }
+  return request.get<PageResult<ExternalCallLog>>('/audit/external-call-logs', { params });
 }

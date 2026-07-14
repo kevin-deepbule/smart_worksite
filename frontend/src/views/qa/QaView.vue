@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import EmptyState from '../../components/common/EmptyState.vue';
 import { fetchDataSources } from '../../api/datasource';
 import { fetchKnowledgeBases } from '../../api/knowledge';
-import { createQaSession, fetchQaMessages, fetchQaSessions, sendQuestion, submitFeedback } from '../../api/qa';
+import { archiveQaSession, createQaSession, fetchQaMessageDetail, fetchQaMessageReferences, fetchQaMessages, fetchQaSessionDetail, fetchQaSessions, regenerateMessage, sendQuestion, submitFeedback, updateQaSession } from '../../api/qa';
 import { useProjectStore } from '../../stores/project';
 import { useUserStore } from '../../stores/user';
 import type { DataSourceItem, ID, KnowledgeBase, QaMessage, QaSession } from '../../api/types';
@@ -23,6 +23,14 @@ const question = ref('');
 const sessions = ref<QaSession[]>([]);
 const activeSessionId = ref<ID>('');
 const messages = ref<QaMessageExtra[]>([]);
+const renameDialogVisible = ref(false);
+const detailDrawerVisible = ref(false);
+const detailLoading = ref(false);
+const selectedMessage = ref<QaMessageExtra | null>(null);
+const selectedReferences = ref<unknown[]>([]);
+const renameTitle = ref('');
+const renaming = ref(false);
+const regeneratingId = ref<ID>('');
 const feedbackMap = ref<Record<string, boolean>>({});
 const routeMode = ref<'AUTO' | 'MODEL' | 'KNOWLEDGE' | 'DATABASE' | 'MIXED'>('AUTO');
 const knowledgeBases = ref<KnowledgeBase[]>([]);
@@ -109,11 +117,81 @@ async function switchSession(sessionId: ID) {
   messageError.value = '';
   messages.value = [];
   try {
+    await fetchQaSessionDetail(sessionId);
     messages.value = await fetchQaMessages(sessionId) as QaMessageExtra[];
   } catch (err) {
     messageError.value = err instanceof Error ? err.message : t('会话消息加载失败，请检查后端问答接口。');
   } finally {
     messageLoading.value = false;
+  }
+}
+
+function openRenameSession(item = activeSession.value) {
+  if (!item) return ElMessage.warning('请先选择会话');
+  renameTitle.value = item.title;
+  renameDialogVisible.value = true;
+}
+
+async function submitRenameSession() {
+  if (!canManageQa.value) return ElMessage.warning(qaManageTip);
+  if (!activeSessionId.value) return ElMessage.warning('请先选择会话');
+  if (!renameTitle.value.trim()) return ElMessage.warning('请输入会话标题');
+  renaming.value = true;
+  try {
+    const updated = await updateQaSession(activeSessionId.value, { title: renameTitle.value.trim() });
+    const target = sessions.value.find((item) => String(item.sessionId) === String(updated.sessionId));
+    if (target) Object.assign(target, updated);
+    renameDialogVisible.value = false;
+    ElMessage.success('会话标题已更新');
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : '会话更新失败');
+  } finally {
+    renaming.value = false;
+  }
+}
+
+async function archiveSession(item = activeSession.value) {
+  if (!canManageQa.value) return ElMessage.warning(qaManageTip);
+  if (!item) return ElMessage.warning('请先选择会话');
+  try {
+    await ElMessageBox.confirm(`确认归档会话“${item.title}”？`, '归档会话', { type: 'warning' });
+    await archiveQaSession(item.sessionId);
+    ElMessage.success('会话已归档');
+    await loadSessions();
+  } catch (err) {
+    if (err === 'cancel' || err === 'close') return;
+    ElMessage.error(err instanceof Error ? err.message : '会话归档失败');
+  }
+}
+
+async function regenerateAnswer(msg: QaMessageExtra) {
+  if (!canManageQa.value) return ElMessage.warning(qaManageTip);
+  if (!activeSessionId.value) return ElMessage.warning('请先选择会话');
+  regeneratingId.value = msg.messageId;
+  try {
+    const answer = await regenerateMessage(activeSessionId.value, msg.messageId) as QaMessageExtra;
+    messages.value.push(answer);
+    ElMessage.success('答案已重新生成');
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : '重新生成失败');
+  } finally {
+    regeneratingId.value = '';
+  }
+}
+
+async function openMessageDetail(msg: QaMessageExtra) {
+  detailDrawerVisible.value = true;
+  detailLoading.value = true;
+  selectedMessage.value = null;
+  selectedReferences.value = [];
+  try {
+    const [detail, refs] = await Promise.all([fetchQaMessageDetail(msg.messageId), fetchQaMessageReferences(msg.messageId)]);
+    selectedMessage.value = detail as QaMessageExtra;
+    selectedReferences.value = refs;
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : '消息详情加载失败');
+  } finally {
+    detailLoading.value = false;
   }
 }
 
@@ -198,10 +276,14 @@ onMounted(() => loadSessions());
         <el-alert v-if="sessionError" :title="sessionError" type="error" show-icon :closable="false" style="margin-bottom: 12px" />
         <EmptyState v-if="!sessions.length" :description="t('暂无会话，请新建会话。')" />
         <div v-else class="session-list">
-          <button v-for="item in sessions" :key="item.sessionId" type="button" class="session-item" :class="{ active: String(activeSessionId) === String(item.sessionId) }" @click="switchSession(item.sessionId)">
+          <div v-for="item in sessions" :key="item.sessionId" class="session-item" :class="{ active: String(activeSessionId) === String(item.sessionId) }" @click="switchSession(item.sessionId)">
             <strong>{{ item.title }} <el-tag v-if="hasSuspiciousText(item.title)" type="warning" size="small">疑似历史乱码数据</el-tag></strong>
             <span>{{ item.updatedAt || item.createdAt }}</span>
-          </button>
+            <span v-if="canManageQa" class="session-actions" @click.stop>
+              <el-button link type="primary" @click="openRenameSession(item)">改名</el-button>
+              <el-button link type="danger" @click="archiveSession(item)">归档</el-button>
+            </span>
+          </div>
         </div>
       </el-card>
 
@@ -247,6 +329,8 @@ onMounted(() => loadSessions());
                 <el-button v-if="canManageQa" size="small" @click="feedback(msg, true)">{{ t('有用') }}</el-button>
                 <el-button v-if="canManageQa" size="small" @click="feedback(msg, false)">{{ t('无用') }}</el-button>
               </template>
+              <el-button size="small" @click="openMessageDetail(msg)">详情/引用</el-button>
+              <el-button v-if="canManageQa" size="small" type="primary" :loading="String(regeneratingId) === String(msg.messageId)" @click="regenerateAnswer(msg)">重新生成</el-button>
             </div>
           </template>
         </div>
@@ -255,6 +339,28 @@ onMounted(() => loadSessions());
         <el-button v-if="canManageQa" type="primary" style="margin-top: 10px" :loading="sending" :disabled="sending" @click="ask">{{ t('发送') }}</el-button>
       </el-card>
     </div>
+    <el-dialog v-model="renameDialogVisible" title="修改会话标题" width="420px">
+      <el-form label-width="90px"><el-form-item label="标题" required><el-input v-model="renameTitle" maxlength="80" show-word-limit /></el-form-item></el-form>
+      <template #footer><el-button @click="renameDialogVisible = false">取消</el-button><el-button type="primary" :loading="renaming" @click="submitRenameSession">保存</el-button></template>
+    </el-dialog>
+    <el-drawer v-model="detailDrawerVisible" title="消息详情与引用" size="560px">
+      <div v-loading="detailLoading">
+        <EmptyState v-if="!selectedMessage" description="暂无消息详情。" />
+        <template v-else>
+          <el-descriptions :column="1" border>
+            <el-descriptions-item label="消息ID">{{ selectedMessage.messageId }}</el-descriptions-item>
+            <el-descriptions-item label="状态">{{ selectedMessage.status }}</el-descriptions-item>
+            <el-descriptions-item label="路由">{{ selectedMessage.routeMode || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="Trace">{{ selectedMessage.providerTraceId || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="问题">{{ selectedMessage.question || selectedMessage.content || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="回答">{{ selectedMessage.answer || '-' }}</el-descriptions-item>
+          </el-descriptions>
+          <h3 class="panel-title refs-title">引用来源</h3>
+          <EmptyState v-if="!selectedReferences.length" description="暂无单独引用记录。" />
+          <pre v-else class="json-block">{{ JSON.stringify(selectedReferences, null, 2) }}</pre>
+        </template>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -264,6 +370,7 @@ onMounted(() => loadSessions());
 .session-item { text-align: left; border: 1px solid var(--sw-border); border-radius: 10px; background: #fff; padding: 12px; cursor: pointer; display: grid; gap: 6px; }
 .session-item.active { border-color: var(--sw-primary); box-shadow: 0 0 0 3px rgba(30, 94, 255, 0.12); }
 .session-item span, .muted { color: var(--sw-muted); font-size: 12px; }
+.session-actions { display: flex; gap: 8px; }
 .chat { padding: 12px; border: 1px solid var(--sw-border); border-radius: 12px; margin-bottom: 12px; }
 .chat.user { background: #f8fafc; }
 .chat.assistant { background: #fff; }
@@ -277,5 +384,7 @@ onMounted(() => loadSessions());
 .qa-options { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .option-label { display: inline-flex; align-items: center; height: 32px; color: var(--sw-muted); font-size: 13px; }
 .input-label { margin: 10px 0 8px; font-weight: 700; }
+.refs-title { margin-top: 16px; }
+.json-block { white-space: pre-wrap; background: #f8fafc; border: 1px solid var(--sw-border); border-radius: 10px; padding: 12px; max-height: 320px; overflow: auto; }
 @media (max-width: 960px) { .three-col { grid-template-columns: 1fr; } }
 </style>

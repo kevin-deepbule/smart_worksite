@@ -91,6 +91,19 @@ export interface ProjectStatistics {
   ocrCount: number;
   fileStorageBytes: number;
 }
+
+export interface ProjectSettings {
+  projectId?: ID;
+  defaultKnowledgeBaseId?: ID | null;
+  defaultReportTemplateId?: ID | null;
+  dataRetentionDays?: number;
+  uploadMaxSizeMb?: number;
+  allowedFileTypes?: string[];
+  internetPolicyCrawlerEnabled?: boolean;
+  defaultQaRouteMode?: 'AUTO' | 'MODEL' | 'KNOWLEDGE' | 'DATABASE' | 'MIXED' | string;
+  defaultOcrLanguage?: string;
+  defaultReportExportFormat?: 'WORD' | 'PDF' | string;
+}
 export interface FileObject {
   fileId: ID;
   objectName?: string;
@@ -506,5 +519,19 @@ export interface AuditLog {
   ipAddress?: string;
   ip?: string;
   detail?: string;
+  createdAt: string;
+}
+
+export interface ExternalCallLog {
+  id: ID;
+  projectId?: ID;
+  serviceName: string;
+  callType: string;
+  requestId?: string;
+  requestSummary?: string;
+  responseSummary?: string;
+  status: string;
+  costMs?: number;
+  errorMessage?: string;
   createdAt: string;
 }

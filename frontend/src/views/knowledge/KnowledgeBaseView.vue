@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import AppUpload from '../../components/common/AppUpload.vue';
 import AppTable from '../../components/common/AppTable.vue';
 import StatusTag from '../../components/common/StatusTag.vue';
 import EmptyState from '../../components/common/EmptyState.vue';
-import { createKnowledgeBase, fetchKnowledgeBases, fetchKnowledgeDocuments, triggerDocumentIndex, uploadKnowledgeDocument } from '../../api/knowledge';
+import { createKnowledgeBase, deleteKnowledgeBase, deleteKnowledgeDocument, disableKnowledgeBase, enableKnowledgeBase, fetchKnowledgeBaseDetail, fetchKnowledgeBases, fetchKnowledgeDocumentDetail, fetchKnowledgeDocuments, triggerDocumentIndex, updateKnowledgeBase, uploadKnowledgeDocument } from '../../api/knowledge';
 import { createFileParse, fetchLatestFileParseRecord } from '../../api/file';
 import { useProjectStore } from '../../stores/project';
 import { useUserStore } from '../../stores/user';
@@ -23,10 +23,13 @@ const bases = ref<KnowledgeBase[]>([]);
 const docs = ref<KnowledgeDocument[]>([]);
 const activeBaseId = ref<ID>('');
 const dialogVisible = ref(false);
+const detailDrawerVisible = ref(false);
+const detailLoading = ref(false);
+const selectedDocument = ref<KnowledgeDocument | null>(null);
 const selectedFiles = ref<File[]>([]);
 const indexingId = ref<ID>('');
 const parsingId = ref<ID>('');
-const form = reactive({ name: '', description: '' });
+const form = reactive({ knowledgeBaseId: '', name: '', domain: '', description: '' });
 const activeBase = computed(() => bases.value.find((item) => String(item.knowledgeBaseId) === String(activeBaseId.value)) || null);
 const canManageKnowledge = computed(() => userStore.hasPermission('knowledge:manage'));
 const knowledgeManageTip = '当前账号没有知识库管理权限';
@@ -101,14 +104,88 @@ async function submitCreate() {
   creating.value = true;
   error.value = '';
   try {
-    const created = await createKnowledgeBase(projectId, { name: form.name.trim(), description: form.description.trim() });
-    dialogVisible.value = false; form.name = ''; form.description = '';
-    ElMessage.success('知识库创建成功');
-    await loadBases(created.knowledgeBaseId);
+    const editing = Boolean(form.knowledgeBaseId);
+    const saved = form.knowledgeBaseId
+      ? await updateKnowledgeBase(form.knowledgeBaseId, { name: form.name.trim(), domain: form.domain.trim() || undefined, description: form.description.trim() })
+      : await createKnowledgeBase(projectId, { name: form.name.trim(), domain: form.domain.trim() || undefined, description: form.description.trim() });
+    dialogVisible.value = false; Object.assign(form, { knowledgeBaseId: '', name: '', domain: '', description: '' });
+    ElMessage.success(editing ? '知识库已保存' : '知识库创建成功');
+    await loadBases(saved.knowledgeBaseId);
   } catch (err) {
     const detail = err instanceof Error && err.message ? ` ${err.message}` : '';
     ElMessage.error(`知识库创建失败，请检查后端知识库接口。${detail}`);
   } finally { creating.value = false; }
+}
+
+function openCreateBase() {
+  Object.assign(form, { knowledgeBaseId: '', name: '', domain: '', description: '' });
+  dialogVisible.value = true;
+}
+
+async function openEditBase(base: KnowledgeBase) {
+  if (!canManageKnowledge.value) return ElMessage.warning(knowledgeManageTip);
+  try {
+    const detail = await fetchKnowledgeBaseDetail(base.knowledgeBaseId);
+    Object.assign(form, {
+      knowledgeBaseId: String(detail.knowledgeBaseId),
+      name: detail.name,
+      domain: detail.domain || '',
+      description: detail.description || ''
+    });
+    dialogVisible.value = true;
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : '知识库详情加载失败');
+  }
+}
+
+async function setBaseStatus(base: KnowledgeBase, enabled: boolean) {
+  if (!canManageKnowledge.value) return ElMessage.warning(knowledgeManageTip);
+  try {
+    enabled ? await enableKnowledgeBase(base.knowledgeBaseId) : await disableKnowledgeBase(base.knowledgeBaseId);
+    ElMessage.success(enabled ? '知识库已启用' : '知识库已停用');
+    await loadBases(base.knowledgeBaseId);
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : '知识库状态更新失败');
+  }
+}
+
+async function removeBase(base: KnowledgeBase) {
+  if (!canManageKnowledge.value) return ElMessage.warning(knowledgeManageTip);
+  try {
+    await ElMessageBox.confirm(`确认删除知识库“${base.name}”？`, '删除知识库', { type: 'warning' });
+    await deleteKnowledgeBase(base.knowledgeBaseId);
+    ElMessage.success('知识库已删除');
+    await loadBases();
+  } catch (err) {
+    if (err === 'cancel' || err === 'close') return;
+    ElMessage.error(err instanceof Error ? err.message : '知识库删除失败');
+  }
+}
+
+async function openDocumentDetail(row: KnowledgeDocument) {
+  detailDrawerVisible.value = true;
+  detailLoading.value = true;
+  selectedDocument.value = null;
+  try {
+    selectedDocument.value = await fetchKnowledgeDocumentDetail(row.documentId);
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : '知识文档详情加载失败');
+  } finally {
+    detailLoading.value = false;
+  }
+}
+
+async function removeDocument(row: KnowledgeDocument) {
+  if (!canManageKnowledge.value) return ElMessage.warning(knowledgeManageTip);
+  try {
+    await ElMessageBox.confirm(`确认删除文档“${row.title}”？`, '删除文档', { type: 'warning' });
+    await deleteKnowledgeDocument(row.documentId);
+    ElMessage.success('文档已删除');
+    await loadDocs(activeBaseId.value);
+  } catch (err) {
+    if (err === 'cancel' || err === 'close') return;
+    ElMessage.error(err instanceof Error ? err.message : '知识文档删除失败');
+  }
 }
 
 async function uploadDocs() {
@@ -181,14 +258,29 @@ onMounted(loadBases);
 <template>
   <div class="page" v-loading="loading">
     <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" />
-    <div class="page-header"><div><h2 class="page-title">知识库管理</h2><p class="page-desc">项目级知识库、文档解析状态和入库进度。</p></div><el-button v-if="canManageKnowledge" type="primary" @click="dialogVisible = true">新建知识库</el-button></div>
-    <EmptyState v-if="!loading && !bases.length" description="暂无知识库，请联系知识库管理员创建。" :action-text="canManageKnowledge ? '创建知识库' : undefined" @action="dialogVisible = true" />
+    <div class="page-header"><div><h2 class="page-title">知识库管理</h2><p class="page-desc">项目级知识库、文档解析状态和入库进度。</p></div><el-button v-if="canManageKnowledge" type="primary" @click="openCreateBase">新建知识库</el-button></div>
+    <EmptyState v-if="!loading && !bases.length" description="暂无知识库，请联系知识库管理员创建。" :action-text="canManageKnowledge ? '创建知识库' : undefined" @action="openCreateBase" />
     <template v-else>
-      <el-card class="work-card"><div class="base-list"><button v-for="base in bases" :key="base.knowledgeBaseId" type="button" class="base-card" :class="{ active: String(activeBaseId) === String(base.knowledgeBaseId) }" @click="activeBaseId = base.knowledgeBaseId"><strong>{{ base.name }}</strong><span>{{ base.description || '暂无描述' }}</span><small>领域：{{ base.domain || '-' }}</small></button></div><p v-if="activeBase" class="muted">当前知识库：{{ activeBase.name }} / <StatusTag :status="activeBase.status" /></p></el-card>
+      <el-card class="work-card"><div class="base-list"><div v-for="base in bases" :key="base.knowledgeBaseId" class="base-card" :class="{ active: String(activeBaseId) === String(base.knowledgeBaseId) }" @click="activeBaseId = base.knowledgeBaseId"><strong>{{ base.name }}</strong><span>{{ base.description || '暂无描述' }}</span><small>领域：{{ base.domain || '-' }} / <StatusTag :status="base.status" /></small><div v-if="canManageKnowledge" class="base-actions"><el-button link type="primary" @click.stop="openEditBase(base)">编辑</el-button><el-button link :type="['ENABLED','ACTIVE'].includes(String(base.status).toUpperCase()) ? 'warning' : 'success'" @click.stop="setBaseStatus(base, !['ENABLED','ACTIVE'].includes(String(base.status).toUpperCase()))">{{ ['ENABLED','ACTIVE'].includes(String(base.status).toUpperCase()) ? '停用' : '启用' }}</el-button><el-button link type="danger" @click.stop="removeBase(base)">删除</el-button></div></div></div><p v-if="activeBase" class="muted">当前知识库：{{ activeBase.name }} / <StatusTag :status="activeBase.status" /></p></el-card>
       <el-card class="work-card"><h3 class="panel-title">上传文档</h3><el-alert title="可上传 Word、PPT、Excel/CSV、PDF 和图片；当前后端解析入库优先支持 Word、PDF 和图片，PPT/Excel/CSV 上传后如无法解析会显示明确失败原因。" type="info" show-icon :closable="false" style="margin-bottom: 12px" /><div class="upload-title required-label">知识库文档</div><AppUpload v-model="selectedFiles" accept=".doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.pdf,.jpg,.jpeg,.png,.webp" tip="支持 Word、PPT、Excel/CSV、PDF 和图片；入库前需完成可解析文件内容抽取" :uploading="uploading"  /><el-button type="primary" style="margin-top: 12px" :loading="uploading" :disabled="!activeBaseId" @click="uploadDocs">上传到当前知识库</el-button></el-card>
-      <el-card class="work-card"><h3 class="panel-title">文档处理状态</h3><el-alert v-if="docsError" :title="docsError" type="error" show-icon :closable="false" style="margin-bottom: 12px" /><AppTable :loading="docsLoading" :data="docs" :columns="[{ prop: 'title', label: '文档名称' }, { prop: 'sourceType', label: '来源类型', width: 120 }, { prop: 'indexStatus', label: '入库状态', slot: 'index', width: 110 }, { prop: 'errorMessage', label: '说明' }, { prop: 'createdAt', label: '创建时间', width: 180 }]"><template #empty><EmptyState description="暂无知识库文档，可先上传项目资料。" /></template><template #index="{ row }"><StatusTag :status="row.indexStatus" /></template><el-table-column label="操作" width="240"><template #default="{ row }"><el-tooltip :disabled="canParseDocument(row)" :content="parseDisabledReason(row)"><span><el-button link type="primary" :loading="String(parsingId) === String(row.documentId)" :disabled="!canParseDocument(row)" @click="handleParse(row)">解析文件</el-button></span></el-tooltip><el-button link type="primary" :loading="String(indexingId) === String(row.documentId)" :disabled="!canSubmitIndex(row)" @click="handleIndex(row)">{{ indexActionText(row) }}</el-button></template></el-table-column></AppTable></el-card>
+      <el-card class="work-card"><h3 class="panel-title">文档处理状态</h3><el-alert v-if="docsError" :title="docsError" type="error" show-icon :closable="false" style="margin-bottom: 12px" /><AppTable :loading="docsLoading" :data="docs" :columns="[{ prop: 'title', label: '文档名称' }, { prop: 'sourceType', label: '来源类型', width: 120 }, { prop: 'indexStatus', label: '入库状态', slot: 'index', width: 110 }, { prop: 'errorMessage', label: '说明' }, { prop: 'createdAt', label: '创建时间', width: 180 }]"><template #empty><EmptyState description="暂无知识库文档，可先上传项目资料。" /></template><template #index="{ row }"><StatusTag :status="row.indexStatus" /></template><el-table-column label="操作" width="330"><template #default="{ row }"><el-button link type="primary" @click="openDocumentDetail(row)">详情</el-button><el-tooltip :disabled="canParseDocument(row)" :content="parseDisabledReason(row)"><span><el-button link type="primary" :loading="String(parsingId) === String(row.documentId)" :disabled="!canParseDocument(row)" @click="handleParse(row)">解析文件</el-button></span></el-tooltip><el-button link type="primary" :loading="String(indexingId) === String(row.documentId)" :disabled="!canSubmitIndex(row)" @click="handleIndex(row)">{{ indexActionText(row) }}</el-button><el-button v-if="canManageKnowledge" link type="danger" @click="removeDocument(row)">删除</el-button></template></el-table-column></AppTable></el-card>
     </template>
-    <el-dialog v-model="dialogVisible" title="新建知识库" width="520px"><el-form label-width="96px"><el-form-item label="知识库名称" required><el-input v-model="form.name" placeholder="请输入知识库名称" /></el-form-item><el-form-item label="描述"><el-input v-model="form.description" type="textarea" placeholder="请输入知识库描述" /></el-form-item></el-form><template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="creating" @click="submitCreate">创建</el-button></template></el-dialog>
+    <el-dialog v-model="dialogVisible" :title="form.knowledgeBaseId ? '编辑知识库' : '新建知识库'" width="520px"><el-form label-width="96px"><el-form-item label="知识库名称" required><el-input v-model="form.name" placeholder="请输入知识库名称" /></el-form-item><el-form-item label="领域"><el-input v-model="form.domain" placeholder="如 SAFETY、QUALITY" /></el-form-item><el-form-item label="描述"><el-input v-model="form.description" type="textarea" placeholder="请输入知识库描述" /></el-form-item></el-form><template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="creating" @click="submitCreate">保存</el-button></template></el-dialog>
+    <el-drawer v-model="detailDrawerVisible" title="知识文档详情" size="520px">
+      <div v-loading="detailLoading">
+        <EmptyState v-if="!selectedDocument" description="暂无文档详情。" />
+        <el-descriptions v-else :column="1" border>
+          <el-descriptions-item label="文档ID">{{ selectedDocument.documentId }}</el-descriptions-item>
+          <el-descriptions-item label="文件ID">{{ selectedDocument.fileId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="标题">{{ selectedDocument.title }}</el-descriptions-item>
+          <el-descriptions-item label="来源">{{ selectedDocument.sourceType || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="入库状态"><StatusTag :status="selectedDocument.indexStatus" /></el-descriptions-item>
+          <el-descriptions-item label="任务ID">{{ selectedDocument.taskId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="错误信息">{{ selectedDocument.errorMessage || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="更新时间">{{ selectedDocument.updatedAt }}</el-descriptions-item>
+        </el-descriptions>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -197,6 +289,7 @@ onMounted(loadBases);
 .base-card { text-align: left; border: 1px solid var(--sw-border); border-radius: 12px; background: #fff; padding: 14px; cursor: pointer; display: grid; gap: 8px; color: inherit; }
 .base-card.active { border-color: var(--sw-primary); box-shadow: 0 0 0 3px rgba(30, 94, 255, 0.12); }
 .base-card span, .base-card small, .muted { color: var(--sw-muted); }
+.base-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .panel-title { margin: 0 0 12px; font-size: 16px; }
 .upload-title { margin: 0 0 10px; font-weight: 700; }
 </style>

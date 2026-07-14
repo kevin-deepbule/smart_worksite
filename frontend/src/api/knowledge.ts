@@ -48,6 +48,55 @@ export async function createKnowledgeBase(projectId: ID, data: Pick<KnowledgeBas
   return request.post<KnowledgeBase>(`/projects/${projectId}/knowledge-bases`, data);
 }
 
+export async function fetchKnowledgeBaseDetail(knowledgeBaseId: ID) {
+  if (useMock) {
+    const item = mockBaseState.find((base) => String(base.knowledgeBaseId) === String(knowledgeBaseId));
+    if (!item) throw new Error(`知识库不存在：${knowledgeBaseId}`);
+    return item;
+  }
+  return request.get<KnowledgeBase>(`/knowledge-bases/${knowledgeBaseId}`);
+}
+
+export async function updateKnowledgeBase(knowledgeBaseId: ID, data: Pick<KnowledgeBase, 'name' | 'description' | 'domain'>) {
+  if (useMock) {
+    const item = mockBaseState.find((base) => String(base.knowledgeBaseId) === String(knowledgeBaseId));
+    if (!item) throw new Error(`知识库不存在：${knowledgeBaseId}`);
+    Object.assign(item, data, { updatedAt: new Date().toISOString() });
+    saveMockState();
+    return item;
+  }
+  return request.put<KnowledgeBase>(`/knowledge-bases/${knowledgeBaseId}`, data);
+}
+
+export async function enableKnowledgeBase(knowledgeBaseId: ID) {
+  if (useMock) {
+    const item = mockBaseState.find((base) => String(base.knowledgeBaseId) === String(knowledgeBaseId));
+    if (item) { item.status = 'ENABLED'; item.updatedAt = new Date().toISOString(); saveMockState(); return item; }
+    throw new Error(`知识库不存在：${knowledgeBaseId}`);
+  }
+  return request.post<KnowledgeBase>(`/knowledge-bases/${knowledgeBaseId}/enable`);
+}
+
+export async function disableKnowledgeBase(knowledgeBaseId: ID) {
+  if (useMock) {
+    const item = mockBaseState.find((base) => String(base.knowledgeBaseId) === String(knowledgeBaseId));
+    if (item) { item.status = 'DISABLED'; item.updatedAt = new Date().toISOString(); saveMockState(); return item; }
+    throw new Error(`知识库不存在：${knowledgeBaseId}`);
+  }
+  return request.post<KnowledgeBase>(`/knowledge-bases/${knowledgeBaseId}/disable`);
+}
+
+export async function deleteKnowledgeBase(knowledgeBaseId: ID) {
+  if (useMock) {
+    const index = mockBaseState.findIndex((base) => String(base.knowledgeBaseId) === String(knowledgeBaseId));
+    if (index < 0) throw new Error(`知识库不存在：${knowledgeBaseId}`);
+    mockBaseState.splice(index, 1);
+    saveMockState();
+    return null;
+  }
+  return request.delete<null>(`/knowledge-bases/${knowledgeBaseId}`);
+}
+
 export async function uploadKnowledgeDocument(knowledgeBaseId: ID, file: File) {
   if (useMock) {
     const now = new Date().toISOString();
@@ -82,4 +131,24 @@ export async function fetchKnowledgeDocuments(knowledgeBaseId: ID, params: PageQ
   const records = mockDocumentState.filter((item) => String(item.knowledgeBaseId) === String(knowledgeBaseId));
   if (useMock) return { pageNo: params.pageNo || 1, pageSize: params.pageSize || 20, total: records.length, records } satisfies PageResult<KnowledgeDocument>;
   return request.get<PageResult<KnowledgeDocument>>(`/knowledge-bases/${knowledgeBaseId}/documents`, { params });
+}
+
+export async function fetchKnowledgeDocumentDetail(documentId: ID) {
+  if (useMock) {
+    const item = mockDocumentState.find((doc) => String(doc.documentId) === String(documentId));
+    if (!item) throw new Error(`知识文档不存在：${documentId}`);
+    return item;
+  }
+  return request.get<KnowledgeDocument>(`/knowledge-documents/${documentId}`);
+}
+
+export async function deleteKnowledgeDocument(documentId: ID) {
+  if (useMock) {
+    const index = mockDocumentState.findIndex((doc) => String(doc.documentId) === String(documentId));
+    if (index < 0) throw new Error(`知识文档不存在：${documentId}`);
+    mockDocumentState.splice(index, 1);
+    saveMockState();
+    return null;
+  }
+  return request.delete<null>(`/knowledge-documents/${documentId}`);
 }

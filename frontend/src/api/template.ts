@@ -59,6 +59,10 @@ export function fetchTemplateDetail(templateId: ID) {
   return request.get<TemplateItem>(`/templates/${templateId}`);
 }
 
+export function fetchReviewTemplateDetail(templateId: ID) {
+  return request.get<TemplateItem>(`/templates/${templateId}`);
+}
+
 export function updateTemplate(templateId: ID, data: TemplateUpdateRequest) {
   return request.put<TemplateItem>(`/templates/${templateId}`, data);
 }

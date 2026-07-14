@@ -5,7 +5,7 @@ import AppTable from '../../components/common/AppTable.vue';
 import AppUpload from '../../components/common/AppUpload.vue';
 import EmptyState from '../../components/common/EmptyState.vue';
 import StatusTag from '../../components/common/StatusTag.vue';
-import { deleteTemplate, disableTemplate, enableTemplate, fetchTemplates, updateTemplate, uploadTemplate, type TemplateItem } from '../../api/template';
+import { deleteTemplate, disableTemplate, enableTemplate, fetchTemplateDetail, fetchTemplates, updateTemplate, uploadTemplate, type TemplateItem } from '../../api/template';
 import { useProjectStore } from '../../stores/project';
 import { useUserStore } from '../../stores/user';
 import { hasSuspiciousText } from '../../utils/textQuality';
@@ -63,11 +63,16 @@ function openCreate(category = 'REPORT') {
   dialogVisible.value = true;
 }
 
-function openEdit(row: TemplateItem) {
+async function openEdit(row: TemplateItem) {
   if (!canManageTemplate.value) return ElMessage.warning(templateManageTip);
-  Object.assign(form, { templateId: String(row.templateId), templateName: row.templateName, templateCategory: row.templateCategory || 'REPORT', templateType: row.templateType, scenario: row.scenario || '', versionNo: row.versionNo || 'v1.0', description: row.description || '' });
-  file.value = null;
-  dialogVisible.value = true;
+  try {
+    const detail = await fetchTemplateDetail(row.templateId);
+    Object.assign(form, { templateId: String(detail.templateId), templateName: detail.templateName, templateCategory: detail.templateCategory || row.templateCategory || 'REPORT', templateType: detail.templateType, scenario: detail.scenario || '', versionNo: detail.versionNo || 'v1.0', description: detail.description || '' });
+    file.value = null;
+    dialogVisible.value = true;
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : '模板详情加载失败，请检查后端模板详情接口。');
+  }
 }
 
 function onCategoryChange(category: string) {

@@ -4,10 +4,10 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import AppTable from '../../components/common/AppTable.vue';
 import StatusTag from '../../components/common/StatusTag.vue';
 import EmptyState from '../../components/common/EmptyState.vue';
-import { createProject, deleteProject, fetchProjects, updateProject, updateProjectStatus } from '../../api/project';
+import { archiveProject, createProject, deleteProject, disableProject, enableProject, fetchProjectSettings, fetchProjects, updateProject, updateProjectSettings } from '../../api/project';
 import * as memberApi from '../../api/member';
 import * as userApi from '../../api/user';
-import type { ProjectItem, ProjectMemberItem, UserItem } from '../../api/types';
+import type { ProjectItem, ProjectMemberItem, ProjectSettings, UserItem } from '../../api/types';
 import { useProjectStore } from '../../stores/project';
 import { useUserStore } from '../../stores/user';
 import { hasSuspiciousText } from '../../utils/textQuality';
@@ -29,11 +29,27 @@ const userError = ref('');
 const memberDialogVisible = ref(false);
 const editingUserId = ref<number | string | null>(null);
 const selectedMemberProject = ref<ProjectItem | null>(null);
+const settingsDialogVisible = ref(false);
+const settingsLoading = ref(false);
+const settingsSaving = ref(false);
+const settingsProject = ref<ProjectItem | null>(null);
 const members = ref<ProjectMemberItem[]>([]);
 const allUsers = ref<UserItem[]>([]);
 const canManageProject = computed(() => userStore.hasPermission('project:manage'));
 const canManageMembers = computed(() => userStore.hasPermission('project:member:manage'));
 const form = reactive({ projectId: '', name: '', code: '', address: '', description: '' });
+const settingsForm = reactive<ProjectSettings>({
+  defaultKnowledgeBaseId: null,
+  defaultReportTemplateId: null,
+  dataRetentionDays: 365,
+  uploadMaxSizeMb: 100,
+  allowedFileTypes: ['docx', 'pdf', 'jpg', 'png'],
+  internetPolicyCrawlerEnabled: false,
+  defaultQaRouteMode: 'AUTO',
+  defaultOcrLanguage: 'zh-CN',
+  defaultReportExportFormat: 'WORD'
+});
+const allowedFileTypesText = ref('docx,pdf,jpg,png');
 const memberForm = ref({ userId: '' as string | number, projectRole: 'BUSINESS_USER' });
 const PROJECT_ROLES = [
   { value: 'PROJECT_ADMIN', label: '项目管理员' },
@@ -43,6 +59,12 @@ const PROJECT_ROLES = [
 const roleLabel = (role: string) => PROJECT_ROLES.find((item) => item.value === role)?.label || role;
 const existingUserIds = computed(() => new Set(members.value.map((member) => String(member.userId))));
 const availableUsers = computed(() => allUsers.value.filter((user) => user.status === 'ENABLED' && !existingUserIds.value.has(String(user.id))));
+
+function parseOptionalId(value: unknown) {
+  if (value === '' || value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
 async function loadProjects() {
   loading.value = true;
@@ -204,13 +226,63 @@ async function toggleProjectStatus(row: ProjectItem) {
   const actionText = enabled ? '停用' : '启用';
   try {
     await ElMessageBox.confirm(`确认${actionText}项目“${row.name || row.projectName}”？`, `${actionText}项目`, { type: 'warning' });
-    await updateProjectStatus(row.projectId, nextStatus);
+    if (nextStatus === 'ENABLED') await enableProject(row.projectId);
+    else await disableProject(row.projectId);
     ElMessage.success(`项目已${actionText}`);
     await loadProjects();
   } catch (err) {
     if (err === 'cancel' || err === 'close') return;
     const detail = err instanceof Error && err.message ? ` ${err.message}` : '';
     ElMessage.error(`项目${actionText}失败，请检查后端项目状态接口。${detail}`);
+  }
+}
+
+async function archive(row: ProjectItem) {
+  if (!canManageProject.value) return ElMessage.warning('当前账号没有项目管理权限');
+  try {
+    await ElMessageBox.confirm(`确认归档项目“${row.name || row.projectName}”？归档后项目业务数据将只读。`, '归档项目', { type: 'warning' });
+    await archiveProject(row.projectId);
+    ElMessage.success('项目已归档');
+    await loadProjects();
+  } catch (err) {
+    if (err === 'cancel' || err === 'close') return;
+    ElMessage.error(getErrorMessage(err, '项目归档失败，请检查后端项目归档接口。'));
+  }
+}
+
+async function openSettings(row: ProjectItem) {
+  if (!canManageProject.value) return ElMessage.warning('当前账号没有项目管理权限');
+  settingsProject.value = row;
+  settingsDialogVisible.value = true;
+  settingsLoading.value = true;
+  try {
+    const settings = await fetchProjectSettings(row.projectId);
+    Object.assign(settingsForm, settings);
+    allowedFileTypesText.value = (settings.allowedFileTypes || []).join(',');
+  } catch (err) {
+    ElMessage.error(getErrorMessage(err, '项目设置加载失败，请检查后端项目设置接口。'));
+  } finally {
+    settingsLoading.value = false;
+  }
+}
+
+async function saveSettings() {
+  const projectId = settingsProject.value?.projectId;
+  if (!projectId) return ElMessage.warning('请先选择项目');
+  settingsSaving.value = true;
+  try {
+    await updateProjectSettings(projectId, {
+      ...settingsForm,
+      defaultKnowledgeBaseId: parseOptionalId(settingsForm.defaultKnowledgeBaseId),
+      defaultReportTemplateId: parseOptionalId(settingsForm.defaultReportTemplateId),
+      allowedFileTypes: allowedFileTypesText.value.split(',').map((item) => item.trim()).filter(Boolean)
+    });
+    ElMessage.success('项目设置已保存');
+    settingsDialogVisible.value = false;
+  } catch (err) {
+    ElMessage.error(getErrorMessage(err, '项目设置保存失败，请检查后端项目设置接口。'));
+  } finally {
+    settingsSaving.value = false;
   }
 }
 
@@ -249,14 +321,16 @@ onMounted(loadProjects);
           <el-tag v-if="hasSuspiciousText(row.name || row.projectName)" type="warning" size="small" style="margin-left: 6px">疑似历史乱码数据</el-tag>
         </template>
         <template #status="{ row }"><StatusTag :status="row.status" /></template>
-        <el-table-column label="操作" width="320">
+        <el-table-column label="操作" width="390">
           <template #default="{ row }">
             <el-button link type="primary" @click="switchProject(row)">设为当前</el-button>
             <el-button v-if="canManageMembers" link type="primary" @click="openMemberManagement(row)">成员管理</el-button>
+            <el-button v-if="canManageProject" link type="primary" @click="openSettings(row)">项目设置</el-button>
             <el-button v-if="canManageProject" link @click="openEdit(row)">编辑</el-button>
             <el-button v-if="canManageProject" link :type="['ACTIVE', 'ENABLED'].includes(row.status) ? 'warning' : 'success'" @click="toggleProjectStatus(row)">
               {{ ['ACTIVE', 'ENABLED'].includes(row.status) ? '停用' : '启用' }}
             </el-button>
+            <el-button v-if="canManageProject && row.status !== 'ARCHIVED'" link type="warning" @click="archive(row)">归档</el-button>
             <el-button v-if="canManageProject" link type="danger" :loading="deletingId === String(row.projectId)" @click="removeProject(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -270,6 +344,36 @@ onMounted(loadProjects);
         <el-form-item label="说明"><el-input v-model="form.description" type="textarea" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="saveProject">保存</el-button></template>
+    </el-dialog>
+    <el-dialog v-model="settingsDialogVisible" :title="`${settingsProject?.name || settingsProject?.projectName || '项目'} - 项目设置`" width="680px" destroy-on-close>
+      <el-form v-loading="settingsLoading" label-width="150px">
+        <el-form-item label="默认知识库ID"><el-input v-model="settingsForm.defaultKnowledgeBaseId" clearable placeholder="可留空" /></el-form-item>
+        <el-form-item label="默认报告模板ID"><el-input v-model="settingsForm.defaultReportTemplateId" clearable placeholder="可留空" /></el-form-item>
+        <el-form-item label="数据保留天数"><el-input-number v-model="settingsForm.dataRetentionDays" :min="1" :max="3650" /></el-form-item>
+        <el-form-item label="上传大小上限(MB)"><el-input-number v-model="settingsForm.uploadMaxSizeMb" :min="1" /></el-form-item>
+        <el-form-item label="允许文件类型"><el-input v-model="allowedFileTypesText" placeholder="docx,pdf,jpg,png" /></el-form-item>
+        <el-form-item label="政策资讯 Mock 开关"><el-switch v-model="settingsForm.internetPolicyCrawlerEnabled" active-text="启用" inactive-text="停用" /></el-form-item>
+        <el-form-item label="默认问答路由">
+          <el-select v-model="settingsForm.defaultQaRouteMode" style="width: 220px">
+            <el-option label="自动路由" value="AUTO" />
+            <el-option label="模型问答" value="MODEL" />
+            <el-option label="知识库问答" value="KNOWLEDGE" />
+            <el-option label="数据库问答" value="DATABASE" />
+            <el-option label="混合问答" value="MIXED" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="默认 OCR 语言"><el-input v-model="settingsForm.defaultOcrLanguage" style="width: 220px" /></el-form-item>
+        <el-form-item label="默认导出格式">
+          <el-select v-model="settingsForm.defaultReportExportFormat" style="width: 220px">
+            <el-option label="Word" value="WORD" />
+            <el-option label="PDF" value="PDF" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="settingsDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="settingsSaving" @click="saveSettings">保存设置</el-button>
+      </template>
     </el-dialog>
     <el-drawer v-model="memberDrawerVisible" size="760px" :title="`${selectedMemberProject?.name || selectedMemberProject?.projectName || '项目'} - 成员管理`">
       <div class="member-toolbar">

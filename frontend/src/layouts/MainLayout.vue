@@ -1,8 +1,9 @@
 ﻿<script setup lang="ts">
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ElMessageBox } from 'element-plus';
-import { ChatLineRound, Coin, DocumentChecked, Files, FolderOpened, House, Notebook, Operation, Picture, Reading, Setting, SwitchButton, Tickets, User } from '@element-plus/icons-vue';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import { ChatLineRound, Coin, DocumentChecked, Files, FolderOpened, House, Key, Notebook, Operation, Picture, Reading, Setting, SwitchButton, Tickets, User } from '@element-plus/icons-vue';
+import { changeCurrentPassword } from '../api/auth';
 import { useProjectStore } from '../stores/project';
 import { useUserStore } from '../stores/user';
 
@@ -10,6 +11,9 @@ const route = useRoute();
 const router = useRouter();
 const projectStore = useProjectStore();
 const userStore = useUserStore();
+const passwordDialogVisible = ref(false);
+const passwordSaving = ref(false);
+const passwordForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' });
 
 const menuGroups = [
   {
@@ -74,6 +78,29 @@ async function logout() {
   await userStore.logout();
   router.replace('/login');
 }
+
+function openPasswordDialog() {
+  Object.assign(passwordForm, { oldPassword: '', newPassword: '', confirmPassword: '' });
+  passwordDialogVisible.value = true;
+}
+
+async function submitPasswordChange() {
+  if (!passwordForm.oldPassword) return ElMessage.warning('请输入原密码');
+  if (passwordForm.newPassword.length < 6) return ElMessage.warning('新密码至少 6 位');
+  if (passwordForm.newPassword !== passwordForm.confirmPassword) return ElMessage.warning('两次新密码不一致');
+  passwordSaving.value = true;
+  try {
+    await changeCurrentPassword({ oldPassword: passwordForm.oldPassword, newPassword: passwordForm.newPassword });
+    ElMessage.success('密码已修改，请重新登录');
+    passwordDialogVisible.value = false;
+    await userStore.logout();
+    router.replace('/login');
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : '修改密码失败');
+  } finally {
+    passwordSaving.value = false;
+  }
+}
 </script>
 
 <template>
@@ -116,6 +143,7 @@ async function logout() {
             <span class="user-chip">{{ userStore.displayName }} / {{ userStore.roles[0] || '未分配角色' }}</span>
             <template #dropdown>
               <el-dropdown-menu>
+                <el-dropdown-item :icon="Key" @click="openPasswordDialog">修改密码</el-dropdown-item>
                 <el-dropdown-item :icon="SwitchButton" @click="logout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -124,6 +152,17 @@ async function logout() {
       </el-header>
       <el-main class="content"><router-view :key="projectStore.currentProjectId" /></el-main>
     </el-container>
+    <el-dialog v-model="passwordDialogVisible" title="修改当前用户密码" width="420px" destroy-on-close>
+      <el-form label-width="90px">
+        <el-form-item label="原密码" required><el-input v-model="passwordForm.oldPassword" type="password" show-password autocomplete="current-password" /></el-form-item>
+        <el-form-item label="新密码" required><el-input v-model="passwordForm.newPassword" type="password" show-password autocomplete="new-password" /></el-form-item>
+        <el-form-item label="确认密码" required><el-input v-model="passwordForm.confirmPassword" type="password" show-password autocomplete="new-password" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="passwordDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="passwordSaving" @click="submitPasswordChange">保存</el-button>
+      </template>
+    </el-dialog>
   </el-container>
 </template>
 

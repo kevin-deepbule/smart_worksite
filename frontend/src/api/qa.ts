@@ -1,6 +1,6 @@
 import request from '../utils/request';
 import { mockQaMessages, mockQaSessions, type QaMessageWithExtra } from '../mocks/qa';
-import type { ID, PageResult, QaMessage, QaSession } from './types';
+import type { ID, PageResult, QaMessage, QaReference, QaSession } from './types';
 import { useModuleMock } from './mock';
 
 const useMock = useModuleMock('VITE_USE_QA_MOCK', false);
@@ -53,6 +53,35 @@ export async function fetchQaMessages(sessionId: ID) {
   return request.get<QaMessage[]>(`/qa/sessions/${sessionId}/messages`);
 }
 
+export async function fetchQaSessionDetail(sessionId: ID) {
+  if (useMock) {
+    const item = mockSessions.find((session) => String(session.sessionId) === String(sessionId));
+    if (!item) throw new Error(`问答会话不存在：${sessionId}`);
+    return item;
+  }
+  return request.get<QaSession>(`/qa/sessions/${sessionId}`);
+}
+
+export async function updateQaSession(sessionId: ID, data: { title: string }) {
+  if (useMock) {
+    const item = mockSessions.find((session) => String(session.sessionId) === String(sessionId));
+    if (!item) throw new Error(`问答会话不存在：${sessionId}`);
+    item.title = data.title;
+    item.updatedAt = new Date().toISOString();
+    return item;
+  }
+  return request.put<QaSession>(`/qa/sessions/${sessionId}`, data);
+}
+
+export async function archiveQaSession(sessionId: ID) {
+  if (useMock) {
+    const index = mockSessions.findIndex((session) => String(session.sessionId) === String(sessionId));
+    if (index >= 0) mockSessions.splice(index, 1);
+    return null;
+  }
+  return request.delete<null>(`/qa/sessions/${sessionId}`);
+}
+
 export async function sendQuestion(sessionId: ID, data: { question: string; routeMode?: string; dataSourceIds?: ID[]; knowledgeBaseIds?: ID[] }, projectId?: ID) {
   if (useMock) {
     const mockProjectId = projectId || mockSessions.find((item) => String(item.sessionId) === String(sessionId))?.projectId;
@@ -67,4 +96,29 @@ export async function sendQuestion(sessionId: ID, data: { question: string; rout
 export async function submitFeedback(messageId: ID, useful: boolean) {
   if (useMock) { feedbackState[String(messageId)] = useful; return { messageId, useful }; }
   return request.post(`/qa/messages/${messageId}/feedback`, { feedbackType: useful ? 'LIKE' : 'DISLIKE', extra: { useful } });
+}
+
+export async function regenerateMessage(sessionId: ID, messageId: ID) {
+  if (useMock) {
+    const old = mockMessages.find((item) => String(item.messageId) === String(messageId));
+    const answer = buildAssistantMessage(sessionId, old?.projectId || mockSessions.find((item) => String(item.sessionId) === String(sessionId))?.projectId || 0, old?.question || '重新生成');
+    answer.answer = `${answer.answer}\n\n（已重新生成）`;
+    mockMessages.push(answer);
+    return answer;
+  }
+  return request.post<QaMessage>(`/qa/sessions/${sessionId}/messages/${messageId}/regenerate`);
+}
+
+export async function fetchQaMessageDetail(messageId: ID) {
+  if (useMock) {
+    const item = mockMessages.find((message) => String(message.messageId) === String(messageId));
+    if (!item) throw new Error(`问答消息不存在：${messageId}`);
+    return item;
+  }
+  return request.get<QaMessage>(`/qa/messages/${messageId}`);
+}
+
+export async function fetchQaMessageReferences(messageId: ID) {
+  if (useMock) return mockMessages.find((message) => String(message.messageId) === String(messageId))?.references || [];
+  return request.get<QaReference[]>(`/qa/messages/${messageId}/references`);
 }
