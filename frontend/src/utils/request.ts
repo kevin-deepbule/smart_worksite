@@ -154,16 +154,21 @@ request.interceptors.response.use(
 
 export async function downloadFile(url: string, options: DownloadOptions = {}) {
   if (!url) throw new Error('下载地址为空');
-  const response = await request.request<Blob, AxiosResponse<Blob>>({
-    ...options,
+  const { filename: requestedFilename, ...requestOptions } = options;
+  // MinIO/S3 presigned URLs already carry their authentication in the query string.
+  // Use a clean Axios request so the application JWT and X-Request-Id interceptors
+  // are not added as a second authentication mechanism or leaked to object storage.
+  const response = await axios.request<Blob>({
+    timeout: request.defaults.timeout,
+    ...requestOptions,
     url,
-    method: options.method || 'GET',
+    method: requestOptions.method || 'GET',
     responseType: 'blob',
     transformResponse: [(data) => data]
   });
   const blob = response.data;
-  const headerFilename = parseFilename(getHeader(response.headers, 'content-disposition'), options.filename || 'download');
-  const filename = options.filename || headerFilename;
+  const headerFilename = parseFilename(getHeader(response.headers, 'content-disposition'), requestedFilename || 'download');
+  const filename = requestedFilename || headerFilename;
   const objectUrl = URL.createObjectURL(blob);
   const link = document.createElement('a');
   try {
@@ -193,7 +198,6 @@ export function downloadTextFile(filename: string, data: string) {
 }
 
 export default request;
-
 
 
 

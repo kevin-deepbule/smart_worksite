@@ -50,6 +50,30 @@
         <result property="metadata" column="metadata"/>
     </resultMap>
 
+    <resultMap id="ReportVariableResultMap" type="com.xd.smartworksite.report.domain.ReportVariableValue">
+        <id property="id" column="id"/>
+        <result property="projectId" column="project_id"/>
+        <result property="reportId" column="report_id"/>
+        <result property="taskId" column="task_id"/>
+        <result property="templateId" column="template_id"/>
+        <result property="templateFileId" column="template_file_id"/>
+        <result property="knowledgeBaseId" column="knowledge_base_id"/>
+        <result property="variableName" column="variable_name"/>
+        <result property="variableDescription" column="variable_description"/>
+        <result property="variableValue" column="variable_value"/>
+        <result property="sortNo" column="sort_no"/>
+        <result property="status" column="status"/>
+        <result property="providerTraceId" column="provider_trace_id"/>
+        <result property="referencesJson" column="references_json"/>
+        <result property="errorMessage" column="error_message"/>
+        <result property="startedAt" column="started_at"/>
+        <result property="finishedAt" column="finished_at"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+        <result property="createdBy" column="created_by"/>
+        <result property="updatedBy" column="updated_by"/>
+    </resultMap>
+
     <sql id="ReportColumns">
         id, project_id, config_id, task_id, report_name, report_type, template_id,
         engine_type, current_version_id, status, progress, preview_url, error_message,
@@ -138,6 +162,8 @@
         update report
         set status = #{status},
             progress = #{progress},
+            error_message = null,
+            finished_at = null,
             started_at = coalesce(started_at, current_timestamp),
             updated_by = 1
         where id = #{reportId}
@@ -150,6 +176,7 @@
             status = #{status},
             progress = #{progress},
             preview_url = #{previewUrl},
+            error_message = null,
             finished_at = current_timestamp,
             updated_by = 1
         where id = #{reportId}
@@ -207,6 +234,72 @@
             1, 1
         )
     </insert>
+
+    <insert id="insertReportVariable" useGeneratedKeys="true" keyProperty="id">
+        insert into report_variable_value (
+            project_id, report_id, task_id, template_id, template_file_id,
+            knowledge_base_id, variable_name, variable_description, variable_value,
+            sort_no, status, references_json, created_by, updated_by
+        ) values (
+            #{projectId}, #{reportId}, #{taskId}, #{templateId}, #{templateFileId},
+            #{knowledgeBaseId}, #{variableName}, #{variableDescription}, #{variableValue},
+            #{sortNo}, #{status}, #{referencesJson}, #{createdBy}, #{updatedBy}
+        )
+    </insert>
+
+    <select id="selectReportVariables" resultMap="ReportVariableResultMap">
+        select id, project_id, report_id, task_id, template_id, template_file_id,
+               knowledge_base_id, variable_name, variable_description, variable_value,
+               sort_no, status, provider_trace_id, references_json, error_message,
+               started_at, finished_at, created_at, updated_at, created_by, updated_by
+        from report_variable_value
+        where report_id = #{reportId}
+          and deleted = 0
+        order by sort_no asc, id asc
+    </select>
+
+    <update id="markReportVariableRunning">
+        update report_variable_value
+        set status = 'RUNNING',
+            variable_value = null,
+            provider_trace_id = null,
+            references_json = '[]',
+            error_message = null,
+            started_at = current_timestamp,
+            finished_at = null,
+            updated_by = 1
+        where id = #{variableId}
+          and task_id = #{taskId}
+          and status in ('PENDING', 'FAILED')
+          and deleted = 0
+    </update>
+
+    <update id="markReportVariableSuccess">
+        update report_variable_value
+        set status = 'SUCCESS',
+            variable_value = #{variableValue},
+            references_json = #{referencesJson},
+            provider_trace_id = #{providerTraceId},
+            error_message = null,
+            finished_at = current_timestamp,
+            updated_by = 1
+        where id = #{variableId}
+          and task_id = #{taskId}
+          and status = 'RUNNING'
+          and deleted = 0
+    </update>
+
+    <update id="markReportVariableFailed">
+        update report_variable_value
+        set status = 'FAILED',
+            error_message = #{errorMessage},
+            finished_at = current_timestamp,
+            updated_by = 1
+        where id = #{variableId}
+          and task_id = #{taskId}
+          and status = 'RUNNING'
+          and deleted = 0
+    </update>
 
     <update id="updateReportVersionWordFile">
         update report_version

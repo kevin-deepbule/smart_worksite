@@ -4,6 +4,7 @@ import com.xd.smartworksite.report.domain.GenerateTask;
 import com.xd.smartworksite.report.domain.Report;
 import com.xd.smartworksite.report.domain.ReportConfig;
 import com.xd.smartworksite.report.domain.ReportVersion;
+import com.xd.smartworksite.report.domain.ReportVariableValue;
 import com.xd.smartworksite.report.mapper.ReportMapper;
 import com.xd.smartworksite.template.domain.FileObjectRecord;
 import org.springframework.stereotype.Repository;
@@ -98,6 +99,37 @@ public class MyBatisReportRepository implements ReportRepository {
             throw new IllegalStateException("report version insert failed or id was not generated");
         }
         return version;
+    }
+
+    @Override
+    public ReportVariableValue saveVariable(ReportVariableValue variable) {
+        int inserted = reportMapper.insertReportVariable(variable);
+        if (inserted <= 0 || variable.getId() == null) {
+            throw new IllegalStateException("report variable insert failed or id was not generated");
+        }
+        return variable;
+    }
+
+    @Override
+    public List<ReportVariableValue> findVariablesByReportId(Long reportId) {
+        return reportMapper.selectReportVariables(reportId);
+    }
+
+    @Override
+    public int markVariableRunning(Long variableId, Long taskId) {
+        return reportMapper.markReportVariableRunning(variableId, taskId);
+    }
+
+    @Override
+    public int markVariableSuccess(Long variableId, Long taskId, String variableValue,
+                                   String referencesJson, String providerTraceId) {
+        return reportMapper.markReportVariableSuccess(
+                variableId, taskId, variableValue, referencesJson, providerTraceId);
+    }
+
+    @Override
+    public int markVariableFailed(Long variableId, Long taskId, String errorMessage) {
+        return reportMapper.markReportVariableFailed(variableId, taskId, errorMessage);
     }
 
     @Override

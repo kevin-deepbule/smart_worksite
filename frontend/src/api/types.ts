@@ -247,6 +247,22 @@ export interface ReportItem {
   updatedAt: string;
 }
 
+export interface ReportVariableItem {
+  variableId: ID;
+  reportId: ID;
+  knowledgeBaseId: ID;
+  variableName: string;
+  variableDescription: string;
+  variableValue?: string;
+  sortNo: number;
+  status: Status;
+  providerTraceId?: string;
+  errorMessage?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  updatedAt?: string;
+}
+
 export interface UserItem {
   id: ID;
   username: string;

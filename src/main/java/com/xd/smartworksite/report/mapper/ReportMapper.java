@@ -4,6 +4,7 @@ import com.xd.smartworksite.report.domain.GenerateTask;
 import com.xd.smartworksite.report.domain.Report;
 import com.xd.smartworksite.report.domain.ReportConfig;
 import com.xd.smartworksite.report.domain.ReportVersion;
+import com.xd.smartworksite.report.domain.ReportVariableValue;
 import com.xd.smartworksite.template.domain.FileObjectRecord;
 import org.apache.ibatis.annotations.Param;
 
@@ -46,6 +47,23 @@ public interface ReportMapper {
     int insertFileObject(FileObjectRecord fileObject);
 
     int insertReportVersion(ReportVersion version);
+
+    int insertReportVariable(ReportVariableValue variable);
+
+    List<ReportVariableValue> selectReportVariables(@Param("reportId") Long reportId);
+
+    int markReportVariableRunning(@Param("variableId") Long variableId,
+                                  @Param("taskId") Long taskId);
+
+    int markReportVariableSuccess(@Param("variableId") Long variableId,
+                                  @Param("taskId") Long taskId,
+                                  @Param("variableValue") String variableValue,
+                                  @Param("referencesJson") String referencesJson,
+                                  @Param("providerTraceId") String providerTraceId);
+
+    int markReportVariableFailed(@Param("variableId") Long variableId,
+                                 @Param("taskId") Long taskId,
+                                 @Param("errorMessage") String errorMessage);
 
     int updateReportVersionWordFile(@Param("versionId") Long versionId,
                                     @Param("wordFileId") Long wordFileId,

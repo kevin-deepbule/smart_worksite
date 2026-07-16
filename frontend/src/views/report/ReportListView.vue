@@ -7,11 +7,11 @@ import AppTable from '../../components/common/AppTable.vue';
 import StatusTag from '../../components/common/StatusTag.vue';
 import EmptyState from '../../components/common/EmptyState.vue';
 import { createReport, downloadReport, fetchReportTemplates, fetchReports, type ReportTemplate } from '../../api/report';
-import { fetchFiles } from '../../api/file';
+import { fetchKnowledgeBases } from '../../api/knowledge';
 import { useProjectStore } from '../../stores/project';
 import { useUserStore } from '../../stores/user';
 import { hasSuspiciousText } from '../../utils/textQuality';
-import type { FileObject, ID, ReportItem } from '../../api/types';
+import type { ID, KnowledgeBase, ReportItem } from '../../api/types';
 
 const router = useRouter();
 const projectStore = useProjectStore();
@@ -21,25 +21,24 @@ const creating = ref(false);
 const dialogVisible = ref(false);
 const error = ref('');
 const templateWarning = ref('');
-const referenceWarning = ref('');
+const knowledgeWarning = ref('');
 const search = reactive({ keyword: '', status: '' });
 const pager = reactive({ pageNo: 1, pageSize: 20, total: 0 });
 const reports = ref<ReportItem[]>([]);
 const templates = ref<ReportTemplate[]>([]);
-const referenceFiles = ref<FileObject[]>([]);
+const knowledgeBases = ref<KnowledgeBase[]>([]);
 const downloadingId = ref<ID>('');
-const form = reactive<{ reportName: string; reportType: string; templateId: ID | ''; referenceFileIds: ID[]; dataSources: string[] }>({
+const form = reactive<{ reportName: string; reportType: string; templateId: ID | ''; knowledgeBaseId: ID | '' }>({
   reportName: '',
   reportType: 'SAFETY_MONTHLY',
   templateId: '',
-  referenceFileIds: [],
-  dataSources: ['MODEL', 'KNOWLEDGE', 'DATABASE', 'FILE']
+  knowledgeBaseId: ''
 });
 
 const currentProjectId = computed(() => projectStore.currentProject?.projectId);
 const canManageReport = computed(() => userStore.hasPermission('report:view'));
 const templateEmpty = computed(() => !templates.value.length && !templateWarning.value);
-const canCreate = computed(() => Boolean(canManageReport.value && currentProjectId.value && form.reportName.trim() && form.reportType && form.templateId && form.referenceFileIds.length));
+const canCreate = computed(() => Boolean(canManageReport.value && currentProjectId.value && form.reportName.trim() && form.reportType && form.templateId && form.knowledgeBaseId));
 const downloadableStatuses = new Set(['COMPLETED']);
 const statusOptions = [
   { label: '已完成', value: 'COMPLETED' },
@@ -54,16 +53,6 @@ function normalizeStatus(status?: string) {
 
 function canDownloadReport(row: ReportItem) {
   return downloadableStatuses.has(normalizeStatus(row.status));
-}
-
-function isTextReferenceFile(file: FileObject) {
-  const name = (file.fileName || '').toLowerCase();
-  const contentType = (file.contentType || '').toLowerCase();
-  return contentType.startsWith('text/') || ['.txt', '.md', '.json', '.csv'].some((suffix) => name.endsWith(suffix));
-}
-
-function displayReferenceFile(file: FileObject) {
-  return `${file.fileName || file.objectName || `文件 ${file.fileId}`} #${file.fileId}`;
 }
 
 async function loadData() {
@@ -93,19 +82,20 @@ async function openCreateDialog() {
   if (!canManageReport.value) return ElMessage.warning('当前账号没有报告创建权限');
   dialogVisible.value = true;
   templateWarning.value = '';
-  referenceWarning.value = '';
+  knowledgeWarning.value = '';
   templates.value = [];
-  referenceFiles.value = [];
+  knowledgeBases.value = [];
   form.templateId = '';
-  form.referenceFileIds = [];
+  form.knowledgeBaseId = '';
   try {
     if (!currentProjectId.value) throw new Error('请先选择项目');
     templates.value = await fetchReportTemplates(currentProjectId.value);
     if (templates.value[0]) form.templateId = templates.value[0].templateId;
-    const filePage = await fetchFiles({ projectId: currentProjectId.value, pageNo: 1, pageSize: 100 });
-    referenceFiles.value = filePage.records.filter(isTextReferenceFile);
-    if (!referenceFiles.value.length) {
-      referenceWarning.value = '当前项目暂无可作为报告参考的文本文件，请先上传 txt、md、json 或 csv 文件。';
+    const bases = await fetchKnowledgeBases(currentProjectId.value, { status: 'ENABLED', pageNo: 1, pageSize: 100 });
+    knowledgeBases.value = bases.filter((item) => String(item.status).toUpperCase() === 'ENABLED');
+    if (knowledgeBases.value[0]) form.knowledgeBaseId = knowledgeBases.value[0].knowledgeBaseId;
+    if (!knowledgeBases.value.length) {
+      knowledgeWarning.value = '当前项目暂无已启用的知识库，请先创建、启用知识库并完成文档入库。';
     }
   } catch (err) {
     templateWarning.value = err instanceof Error ? err.message : '报告创建依赖数据加载失败';
@@ -124,7 +114,7 @@ async function submitCreate() {
   if (!form.reportName.trim()) return ElMessage.warning('请填写报告名称');
   if (!form.reportType) return ElMessage.warning('请选择报告类型');
   if (!form.templateId) return ElMessage.warning('请选择报告模板');
-  if (!form.referenceFileIds.length) return ElMessage.warning('请选择至少一个文本参考文件');
+  if (!form.knowledgeBaseId) return ElMessage.warning('请选择知识库');
   creating.value = true;
   error.value = '';
   try {
@@ -133,7 +123,7 @@ async function submitCreate() {
       reportName: form.reportName,
       reportType: form.reportType,
       templateId: form.templateId,
-      referenceFileIds: form.referenceFileIds
+      knowledgeBaseId: form.knowledgeBaseId
     });
     if (result.status === 'FAILED') {
       ElMessage.warning('报告任务已创建，但生成失败，请进入详情查看失败原因');
@@ -142,7 +132,7 @@ async function submitCreate() {
     }
     dialogVisible.value = false;
     form.reportName = '';
-    form.referenceFileIds = [];
+    form.knowledgeBaseId = '';
     await loadData();
   } catch (err) {
     error.value = err instanceof Error ? err.message : '报告创建失败，请确认后端 /api/reports 是否可用';
@@ -228,7 +218,7 @@ onMounted(loadData);
 
     <el-dialog v-model="dialogVisible" title="新建报告" width="560px">
       <el-alert v-if="templateWarning" :title="templateWarning" type="warning" show-icon :closable="false" style="margin-bottom: 12px" />
-      <el-alert v-if="referenceWarning" :title="referenceWarning" type="warning" show-icon :closable="false" style="margin-bottom: 12px" />
+      <el-alert v-if="knowledgeWarning" :title="knowledgeWarning" type="warning" show-icon :closable="false" style="margin-bottom: 12px" />
       <el-alert
         v-else-if="templateEmpty"
         title="当前项目暂无已启用的报告模板，请先到模板中心上传并启用报告模板。"
@@ -254,19 +244,11 @@ onMounted(loadData);
             <el-option v-for="item in templates" :key="item.templateId" :label="item.templateName" :value="item.templateId" />
           </el-select>
         </el-form-item>
-        <el-form-item label="数据来源" required>
-          <el-checkbox-group v-model="form.dataSources">
-            <el-checkbox label="MODEL">模型生成</el-checkbox>
-            <el-checkbox label="KNOWLEDGE">知识库</el-checkbox>
-            <el-checkbox label="DATABASE">数据库</el-checkbox>
-            <el-checkbox label="FILE">参考文件</el-checkbox>
-          </el-checkbox-group>
-          <div class="form-tip">当前后端创建报告接口保持原有字段，知识库/数据库/模型来源由后端报告任务与 CryptoAgent 链路扩展；本页先展示验收配置入口，不直接调用 Python 或数据库。</div>
-        </el-form-item>
-        <el-form-item label="参考文件" required>
-          <el-select v-model="form.referenceFileIds" multiple style="width: 100%" placeholder="请选择文本参考文件" clearable>
-            <el-option v-for="item in referenceFiles" :key="item.fileId" :label="displayReferenceFile(item)" :value="item.fileId" />
+        <el-form-item label="知识库" required>
+          <el-select v-model="form.knowledgeBaseId" style="width: 100%" placeholder="请选择知识库" clearable>
+            <el-option v-for="item in knowledgeBases" :key="item.knowledgeBaseId" :label="item.name" :value="item.knowledgeBaseId" />
           </el-select>
+          <div class="form-tip">系统将按模板变量顺序，逐项结合该知识库生成报告内容。</div>
         </el-form-item>
       </el-form>
       <template #footer>

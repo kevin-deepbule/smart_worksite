@@ -7,6 +7,7 @@ import com.xd.smartworksite.report.dto.ReportCreateRequest;
 import com.xd.smartworksite.report.dto.ReportCreateResponse;
 import com.xd.smartworksite.report.dto.ReportQueryRequest;
 import com.xd.smartworksite.report.dto.ReportResponse;
+import com.xd.smartworksite.report.dto.ReportVariableResponse;
 import jakarta.validation.Valid;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/reports")
@@ -41,6 +44,11 @@ public class ReportController {
     @GetMapping("/{reportId}")
     public ApiResponse<ReportResponse> getReport(@PathVariable Long reportId) {
         return ApiResponse.success(reportGenerationApplicationService.getReport(reportId));
+    }
+
+    @GetMapping("/{reportId}/variables")
+    public ApiResponse<List<ReportVariableResponse>> getReportVariables(@PathVariable Long reportId) {
+        return ApiResponse.success(reportGenerationApplicationService.getReportVariables(reportId));
     }
 
     @PostMapping("/{reportId}/regenerate")

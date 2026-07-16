@@ -1,6 +1,6 @@
 import request, { downloadFile, downloadTextFile } from '../utils/request';
 import { mockReports } from '../mocks/report';
-import type { ID, PageQuery, PageResult, ReportItem } from './types';
+import type { ID, PageQuery, PageResult, ReportItem, ReportVariableItem } from './types';
 import type { TemplateItem } from './template';
 import { useModuleMock } from './mock';
 
@@ -11,10 +11,7 @@ interface ReportCreateRequest {
   reportName: string;
   reportType: string;
   templateId: ID;
-  knowledgeBaseIds?: ID[];
-  dataSourceIds?: ID[];
-  referenceFileIds?: ID[];
-  variables?: Record<string, unknown>;
+  knowledgeBaseId: ID;
 }
 
 export type ReportTemplate = TemplateItem;
@@ -49,6 +46,11 @@ export async function fetchReportDetail(reportId: ID) {
     return item;
   }
   return request.get<ReportItem>(`/reports/${reportId}`);
+}
+
+export async function fetchReportVariables(reportId: ID) {
+  if (useMock) return [];
+  return request.get<ReportVariableItem[]>(`/reports/${reportId}/variables`);
 }
 
 export async function regenerateReport(reportId: ID) {

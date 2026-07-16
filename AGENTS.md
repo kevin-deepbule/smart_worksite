@@ -97,7 +97,7 @@ Main modules:
 - `datasource`: business data source configuration, project isolation, encrypted password metadata, and database Q&A foundations.
 - `qa`: Q&A sessions, messages, answer references, feedback, project isolation, and model/RAG/database QA integration through the AI adapter.
 - `review`: compliance templates, review records, AI Agent review execution, issue lists, suggestions, issue handling status, and JSON results.
-- `report`: report templates, records, versions, downloads, DOCX rendering, and Python model variable generation.
+- `report`: report templates, records, durable per-variable values, knowledge-based generation, versions, downloads, and DOCX rendering.
 - `ocr`: OCR records, recognition types, structured fields, and result JSON.
 - `policy`: policy/news source configuration, crawl task orchestration, crawled article persistence, and RAG indexing through the AI adapter.
 - `task`: async task query, status statistics, retries, cancellation requests, runtime leases, outbox foundation, and stage logs.
@@ -121,7 +121,8 @@ Business modules may use these layers as needed: `controller`, `application`, `d
 - Project-scoped reads and writes should use `project.application.ProjectAccessApplicationService` for project existence, member access, and project administrator checks.
 - Project-scoped write operations must use `requireProjectWritableAccess` or `requireProjectWritableManage`; `DISABLED` or `ARCHIVED` projects are read-only except status changes back to `ENABLED`.
 - Project settings updates must validate referenced default knowledge bases and report templates against same-project ownership, enabled status, and template category; do not persist dangling or cross-project default IDs.
-- Report generation must validate `referenceFileIds` against the report project before reading file content; cross-project references must fail visibly and mark report generation failed.
+- Report creation requires exactly one enabled knowledge base from the report project. The Worker must revalidate that knowledge base before each system-safe report QA call; cross-project or disabled knowledge bases fail visibly.
+- Report Workers must use the QA gateway's system-safe RAG/model methods. Those methods re-check project existence and writability through `requireProjectWritableForSystem` and must not read request-thread `SecurityContext`; ordinary QA methods keep user-access validation.
 - Report list queries must respect project isolation: platform administrators may query across projects without member-project filters, while non-admin users without a requested project must be restricted to their accessible project IDs or receive an empty page when none are accessible.
 - Project-scoped list/statistics queries that accept optional `projectId` must use the same isolation rule: platform administrators pass no member-project filter for cross-project queries; non-admin users must be constrained to accessible project IDs and receive an empty result when none are accessible.
 - Template list filters must validate enum values fail-fast: `templateCategory` only accepts `REVIEW` or `REPORT`, and `status` only accepts `ENABLED` or `DISABLED`; invalid filters must return parameter errors instead of silently querying empty results.
@@ -143,6 +144,9 @@ Business modules may use these layers as needed: `controller`, `application`, `d
 - Review execution failure handling must check failed-state persistence; if a failed review record cannot be marked `FAILED` with error details, return a conflict instead of losing observability.
 - Review submit APIs must read back the inserted review record before calling the Agent; missing generated IDs or unreadable records must fail before external AI execution.
 - Report generation must check affected rows for report/task state transitions, including report-task linking, task status, processing, success, failed, and version file binding. Zero-row updates must fail with conflict instead of returning fake success.
+- Report creation must snapshot every ordered template variable and its non-blank description into `report_variable_value`; templates without variables or with blank descriptions must be rejected before the async task is queued.
+- Report variable generation must reuse the QA/RAG application gateway without creating ordinary QA sessions or messages. Variables are generated sequentially with empty conversation context; empty retrieval results may continue to the model, but RAG/model service failures remain visible.
+- Every report variable transition to `RUNNING`, `SUCCESS`, or `FAILED` must check affected rows. Task retry preserves successful values and regenerates only `PENDING` or `FAILED` variables before rendering the DOCX.
 - Knowledge base updates must check database affected rows; zero-row updates mean the record was concurrently changed or missing and must return a conflict instead of silently succeeding.
 - Knowledge document uploads must verify generated IDs and read back inserted records before returning success; missing IDs or unreadable inserts must fail before any indexing work starts.
 - Knowledge document indexing must create `KNOWLEDGE_INDEXING` async tasks and call Python RAG indexing through the AI adapter. Java may only orchestrate task state, parse-content loading, project isolation, and error recording; it must not access vector databases, run embeddings, or mark success when parsing or Python indexing fails.
@@ -186,7 +190,7 @@ Request IDs are handled by `common.config.RequestIdFilter`. The response header 
 - Policy/news crawling must be orchestrated by Java and executed through `python-ai-service`; Java persists sources, tasks, articles, external-call logs, and RAG index state, while frontend never crawls external websites or calls Python directly.
 - Long-running operations such as report generation, OCR recognition, knowledge indexing, and document parsing must use async tasks or status records instead of blocking HTTP requests for the whole job. Task status values are `PENDING`, `QUEUED`, `RUNNING`, `SUCCESS`, `FAILED`, `RETRYING`, and `CANCELED`.
 - Async workers such as OCR recognition must not depend on request-thread `SecurityContext`; they must re-check the target project through system-safe project/file access methods before reading files or calling external services.
-- Report creation APIs must return the created report in `PENDING` state and create a `QUEUED` task after writing `task_outbox`; actual DOCX template rendering belongs to the worker path and must re-check project writability before reading materials or calling Python AI. If Python AI, templates, materials, or storage are unavailable, production code must fail visibly and record task/report errors instead of falling back silently.
+- Report creation APIs must return the created report in `PENDING` state and create a `QUEUED` task after writing `task_outbox`; actual knowledge retrieval, per-variable model generation, and DOCX rendering belong to the worker path. If Python AI, templates, knowledge retrieval, or storage are unavailable, production code must fail visibly and record task/report/variable errors instead of falling back silently.
 - Report creation requires explicit `reportName`; do not derive a default report name from `reportType`. Generated DOCX files must be persisted through MinIO and file metadata; persistence failures must fail the task visibly instead of creating fallback success records.
 - Task retry and cancel APIs must fail fast on stale or invalid states. Retrying is allowed only for `FAILED` tasks within the retry limit. Canceling terminal tasks must return a conflict instead of silently succeeding. Running tasks record `cancel_requested=true` and must be stopped by the worker cooperatively.
 - Task stage logs and task outbox events must check insert affected rows and generated IDs where applicable. State transitions must not be reported as successful if their trace or durable outbox record cannot be persisted.
@@ -229,6 +233,7 @@ Request IDs are handled by `common.config.RequestIdFilter`. The response header 
 - All HTTP calls must go through `frontend/src/utils/request.ts`.
 - Requests should automatically attach `Authorization` when a token exists.
 - Requests should automatically attach `X-Request-Id`.
+- Fetching a MinIO/S3 presigned download URL is an explicit exception to authenticated API requests: use the clean download path in `frontend/src/utils/request.ts` and never attach the application JWT or `X-Request-Id` to the signed object-storage request.
 - Handle unified backend responses with `code`, `message`, `data`, `requestId`, and `timestamp`.
 - `401` should redirect to `/login`.
 - `403` should redirect to `/403`.
@@ -241,6 +246,7 @@ Request IDs are handled by `common.config.RequestIdFilter`. The response header 
 - OCR invoice submission must expose and send `invoiceType` as `VAT_SPECIAL` or `VAT_NORMAL`; do not let invoice recognition submit without this backend-required option.
 - OCR frontend submissions should automatically refresh the submitted record and list status until a terminal state; OCR type labels should use the same type metadata as the OCR type selector.
 - Report and review creation pages must load only enabled templates. Review issue status updates must use backend enum values `OPEN`, `PROCESSING`, `RESOLVED`, and `IGNORED`.
+- The report creation page must expose one required enabled knowledge-base selector and must not expose the retired report source checkboxes or reference-file selector. The report detail page must show ordered variable descriptions, generated values, status, and errors while polling non-terminal reports.
 - The compliance review page must provide an upload-template entry that navigates to template management with the review-template category selected.
 - Template upload UI should restrict report/review template files to formats the backend can parse for variables or review context; do not present unsupported template formats as normal upload options.
 - Single-file business flows such as template upload, review submit, and OCR submit must render upload controls as single-file controls; do not allow multi-select and then silently submit only the first file.

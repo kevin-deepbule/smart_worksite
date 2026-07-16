@@ -30,8 +30,18 @@ public class AiApplicationQaGateway implements QaAiGateway {
     }
 
     @Override
+    public ModelInvokeResponse invokeModelForSystem(ModelInvokeRequest request) {
+        return aiApplicationService.invokeModelForSystem(request);
+    }
+
+    @Override
     public RagSearchResponse searchKnowledge(RagSearchRequest request) {
         return aiApplicationService.searchKnowledge(request);
+    }
+
+    @Override
+    public RagSearchResponse searchKnowledgeForSystem(RagSearchRequest request) {
+        return aiApplicationService.searchKnowledgeForSystem(request);
     }
 
     @Override

@@ -43,6 +43,15 @@ public class AiApplicationService {
 
     public ModelInvokeResponse invokeModel(ModelInvokeRequest request) {
         projectAccessApplicationService.requireProjectWritableAccess(request.getProjectId());
+        return doInvokeModel(request);
+    }
+
+    public ModelInvokeResponse invokeModelForSystem(ModelInvokeRequest request) {
+        projectAccessApplicationService.requireProjectWritableForSystem(request.getProjectId());
+        return doInvokeModel(request);
+    }
+
+    private ModelInvokeResponse doInvokeModel(ModelInvokeRequest request) {
         AiProviderResponse response = pythonClient.post(properties.getPaths().getModelInvoke(), "MODEL_INVOKE", request.getProjectId(), request);
         ModelInvokeResponse result = pythonClient.convertData(response, ModelInvokeResponse.class);
         result.setProviderTraceId(response.getTraceId());
@@ -62,6 +71,15 @@ public class AiApplicationService {
 
     public RagSearchResponse searchKnowledge(RagSearchRequest request) {
         projectAccessApplicationService.requireProjectWritableAccess(request.getProjectId());
+        return doSearchKnowledge(request);
+    }
+
+    public RagSearchResponse searchKnowledgeForSystem(RagSearchRequest request) {
+        projectAccessApplicationService.requireProjectWritableForSystem(request.getProjectId());
+        return doSearchKnowledge(request);
+    }
+
+    private RagSearchResponse doSearchKnowledge(RagSearchRequest request) {
         AiProviderResponse response = pythonClient.post(properties.getPaths().getRagSearch(), "RAG_SEARCH", request.getProjectId(), request);
         RagSearchResponse result = pythonClient.convertData(response, RagSearchResponse.class);
         result.setProviderTraceId(response.getTraceId());

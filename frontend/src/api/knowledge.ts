@@ -30,9 +30,9 @@ function createMockId() {
   return Number(`${Date.now()}${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`);
 }
 
-export async function fetchKnowledgeBases(projectId: ID) {
+export async function fetchKnowledgeBases(projectId: ID, params: PageQuery = {}) {
   if (useMock) return mockBaseState.filter((item) => String(item.projectId) === String(projectId));
-  const page = await request.get<PageResult<KnowledgeBase>>(`/projects/${projectId}/knowledge-bases`);
+  const page = await request.get<PageResult<KnowledgeBase>>(`/projects/${projectId}/knowledge-bases`, { params });
   return page.records;
 }
 

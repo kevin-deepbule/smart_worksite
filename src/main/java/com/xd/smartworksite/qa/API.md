@@ -165,3 +165,7 @@ Content-Type: application/json
 - AI 返回后写入答案、引用和状态必须检查影响行数。
 - 持久化失败必须返回冲突，不能把未保存的 AI 答案报告为成功。
 - 外部 AI 调用必须写入 `external_call_log`。
+
+## 报告生成内部调用
+
+报告 Worker 通过 `ReportQaApplicationService` 复用 QA/RAG 网关，不经过本应用 HTTP Controller，也不创建普通 `qa_session` 或 `qa_message`。Worker 调用网关的 `searchKnowledgeForSystem` 和 `invokeModelForSystem`，仅重新校验项目存在且可写，不依赖 HTTP 请求线程的登录上下文；普通问答仍使用带用户权限校验的入口。每次调用只包含一个报告变量及其描述、一个知识库和报告元数据，上下文消息固定为空。知识库检索为空时仍调用模型生成通用内容；知识库非法、RAG 调用失败、模型失败或空答案必须向报告任务暴露错误。

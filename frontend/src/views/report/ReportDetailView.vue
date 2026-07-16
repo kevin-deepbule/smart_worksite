@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import JsonViewer from '../../components/common/JsonViewer.vue';
 import StatusTag from '../../components/common/StatusTag.vue';
 import TaskProgress from '../../components/common/TaskProgress.vue';
 import EmptyState from '../../components/common/EmptyState.vue';
-import { downloadReport, fetchReportDetail, regenerateReport } from '../../api/report';
+import { downloadReport, fetchReportDetail, fetchReportVariables, regenerateReport } from '../../api/report';
 import { fetchTaskStages } from '../../api/task';
-import type { ReportItem, TaskStageLog } from '../../api/types';
+import type { ReportItem, ReportVariableItem, TaskStageLog } from '../../api/types';
 
 const route = useRoute();
 const router = useRouter();
@@ -18,6 +18,8 @@ const error = ref('');
 const notFound = ref(false);
 const report = ref<ReportItem | null>(null);
 const logs = ref<TaskStageLog[]>([]);
+const variables = ref<ReportVariableItem[]>([]);
+let refreshTimer: number | undefined;
 
 const downloadableStatuses = new Set(['COMPLETED']);
 const regeneratableStatuses = new Set(['COMPLETED', 'FAILED', 'ARCHIVED']);
@@ -39,20 +41,34 @@ function isNotFoundError(err: unknown) {
   return message.includes('404') || message.includes('不存在') || message.includes('not found') || message.includes('Not Found');
 }
 
-async function loadData() {
-  loading.value = true;
+async function loadData(silent = false) {
+  if (!silent) loading.value = true;
   error.value = '';
   notFound.value = false;
   try {
     report.value = await fetchReportDetail(route.params.id as string);
-    logs.value = report.value.taskId ? await fetchTaskStages(report.value.taskId) : [];
+    const [variableRecords, stageRecords] = await Promise.all([
+      fetchReportVariables(report.value.reportId),
+      report.value.taskId ? fetchTaskStages(report.value.taskId) : Promise.resolve([])
+    ]);
+    variables.value = variableRecords;
+    logs.value = stageRecords;
   } catch (err) {
     report.value = null;
     notFound.value = isNotFoundError(err);
     error.value = notFound.value ? '' : (err instanceof Error ? err.message : '报告详情加载失败');
   } finally {
-    loading.value = false;
+    if (!silent) loading.value = false;
   }
+}
+
+function scheduleRefresh() {
+  if (refreshTimer) window.clearTimeout(refreshTimer);
+  if (!report.value || ['COMPLETED', 'FAILED', 'ARCHIVED'].includes(normalizeStatus(report.value.status))) return;
+  refreshTimer = window.setTimeout(async () => {
+    await loadData(true);
+    scheduleRefresh();
+  }, 3000);
 }
 
 async function handleDownload() {
@@ -85,9 +101,11 @@ async function handleRegenerate() {
     if (result.reportId && String(result.reportId) !== String(report.value.reportId)) {
       await router.replace(`/report/${result.reportId}`);
       await loadData();
+      scheduleRefresh();
       return;
     }
     await loadData();
+    scheduleRefresh();
   } catch (err) {
     error.value = err instanceof Error ? err.message : '重新生成失败';
   } finally {
@@ -95,7 +113,14 @@ async function handleRegenerate() {
   }
 }
 
-onMounted(loadData);
+onMounted(async () => {
+  await loadData();
+  scheduleRefresh();
+});
+
+onBeforeUnmount(() => {
+  if (refreshTimer) window.clearTimeout(refreshTimer);
+});
 </script>
 
 <template>
@@ -130,6 +155,26 @@ onMounted(loadData);
         </el-descriptions>
       </el-card>
 
+      <el-card class="work-card">
+        <h3 class="panel-title">报告变量</h3>
+        <el-table v-if="variables.length" :data="variables" row-key="variableId" stripe>
+          <el-table-column prop="sortNo" label="顺序" width="72" />
+          <el-table-column prop="variableName" label="变量名" min-width="180" />
+          <el-table-column prop="variableDescription" label="变量描述" min-width="260" show-overflow-tooltip />
+          <el-table-column label="状态" width="110">
+            <template #default="{ row }"><StatusTag :status="row.status" /></template>
+          </el-table-column>
+          <el-table-column label="生成内容" min-width="320">
+            <template #default="{ row }">
+              <div v-if="row.variableValue" class="variable-value">{{ row.variableValue }}</div>
+              <span v-else-if="row.errorMessage" class="variable-error">{{ row.errorMessage }}</span>
+              <span v-else class="variable-empty">等待生成</span>
+            </template>
+          </el-table-column>
+        </el-table>
+        <EmptyState v-else description="暂无报告变量记录" />
+      </el-card>
+
       <div class="two-col">
         <el-card class="work-card">
           <h3 class="panel-title">报告预览</h3>
@@ -145,3 +190,9 @@ onMounted(loadData);
     </template>
   </div>
 </template>
+
+<style scoped>
+.variable-value { white-space: pre-wrap; line-height: 1.65; }
+.variable-error { color: var(--el-color-danger); }
+.variable-empty { color: var(--sw-muted); }
+</style>

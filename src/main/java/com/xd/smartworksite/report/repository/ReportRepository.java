@@ -4,6 +4,7 @@ import com.xd.smartworksite.report.domain.GenerateTask;
 import com.xd.smartworksite.report.domain.Report;
 import com.xd.smartworksite.report.domain.ReportConfig;
 import com.xd.smartworksite.report.domain.ReportVersion;
+import com.xd.smartworksite.report.domain.ReportVariableValue;
 import com.xd.smartworksite.template.domain.FileObjectRecord;
 
 import java.util.List;
@@ -26,6 +27,11 @@ public interface ReportRepository {
     Optional<FileObjectRecord> findFileObjectById(Long fileId);
     FileObjectRecord saveFileObject(FileObjectRecord fileObject);
     ReportVersion saveVersion(ReportVersion version);
+    ReportVariableValue saveVariable(ReportVariableValue variable);
+    List<ReportVariableValue> findVariablesByReportId(Long reportId);
+    int markVariableRunning(Long variableId, Long taskId);
+    int markVariableSuccess(Long variableId, Long taskId, String variableValue, String referencesJson, String providerTraceId);
+    int markVariableFailed(Long variableId, Long taskId, String errorMessage);
     int updateVersionWordFile(Long versionId, Long wordFileId, String contentHash);
     Optional<ReportConfig> findConfigById(Long configId);
     Optional<Long> findCurrentWordFileId(Long reportId);

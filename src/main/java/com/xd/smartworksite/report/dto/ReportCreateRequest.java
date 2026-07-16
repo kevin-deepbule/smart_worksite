@@ -4,9 +4,6 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
-import java.util.List;
-import java.util.Map;
-
 public class ReportCreateRequest {
 
     @NotNull
@@ -22,10 +19,8 @@ public class ReportCreateRequest {
 
     @NotNull
     private Long templateId;
-    private List<Long> referenceFileIds;
-    private List<Long> knowledgeBaseIds;
-    private List<Long> dataSourceIds;
-    private Map<String, Object> variables;
+    @NotNull
+    private Long knowledgeBaseId;
 
     public Long getProjectId() { return projectId; }
     public void setProjectId(Long projectId) { this.projectId = projectId; }
@@ -35,12 +30,6 @@ public class ReportCreateRequest {
     public void setReportType(String reportType) { this.reportType = reportType; }
     public Long getTemplateId() { return templateId; }
     public void setTemplateId(Long templateId) { this.templateId = templateId; }
-    public List<Long> getReferenceFileIds() { return referenceFileIds; }
-    public void setReferenceFileIds(List<Long> referenceFileIds) { this.referenceFileIds = referenceFileIds; }
-    public List<Long> getKnowledgeBaseIds() { return knowledgeBaseIds; }
-    public void setKnowledgeBaseIds(List<Long> knowledgeBaseIds) { this.knowledgeBaseIds = knowledgeBaseIds; }
-    public List<Long> getDataSourceIds() { return dataSourceIds; }
-    public void setDataSourceIds(List<Long> dataSourceIds) { this.dataSourceIds = dataSourceIds; }
-    public Map<String, Object> getVariables() { return variables; }
-    public void setVariables(Map<String, Object> variables) { this.variables = variables; }
+    public Long getKnowledgeBaseId() { return knowledgeBaseId; }
+    public void setKnowledgeBaseId(Long knowledgeBaseId) { this.knowledgeBaseId = knowledgeBaseId; }
 }

@@ -368,6 +368,11 @@ class QaApplicationServiceTest {
         }
 
         @Override
+        public ModelInvokeResponse invokeModelForSystem(ModelInvokeRequest request) {
+            return invokeModel(request);
+        }
+
+        @Override
         public RagSearchResponse searchKnowledge(RagSearchRequest request) {
             lastRagRequest = request;
             RagSearchResponse response = new RagSearchResponse();
@@ -380,6 +385,11 @@ class QaApplicationServiceTest {
             response.setRecords(List.of(record));
             response.setProviderTraceId("rag-trace");
             return response;
+        }
+
+        @Override
+        public RagSearchResponse searchKnowledgeForSystem(RagSearchRequest request) {
+            return searchKnowledge(request);
         }
 
         @Override

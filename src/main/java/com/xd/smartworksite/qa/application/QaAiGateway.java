@@ -17,7 +17,11 @@ public interface QaAiGateway {
 
     ModelInvokeResponse invokeModel(ModelInvokeRequest request);
 
+    ModelInvokeResponse invokeModelForSystem(ModelInvokeRequest request);
+
     RagSearchResponse searchKnowledge(RagSearchRequest request);
+
+    RagSearchResponse searchKnowledgeForSystem(RagSearchRequest request);
 
     DatabaseQueryResponse queryDatabase(DatabaseQueryRequest request);
 
