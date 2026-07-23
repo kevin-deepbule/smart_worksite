@@ -72,6 +72,18 @@ class TaskWorkerApplicationServiceTest {
     }
 
     @Test
+    void renewLeaseExtendsLeaseWithoutCreatingAStageLog() {
+        GenerateTask task = task(1L, TaskStatus.RUNNING.name());
+        task.setWorkerId("worker-a");
+        taskRepository.tasks.add(task);
+
+        service.renewLease(1L, "worker-a", 60);
+
+        assertThat(task.getLeaseUntil()).isAfter(LocalDateTime.now().plusSeconds(30));
+        assertThat(taskRepository.stages).isEmpty();
+    }
+
+    @Test
     void completeSuccessRequiresRunningOwner() {
         GenerateTask task = task(1L, TaskStatus.RUNNING.name());
         task.setWorkerId("worker-a");
@@ -186,6 +198,9 @@ class TaskWorkerApplicationServiceTest {
 
         @Override
         public int markRetrying(Long taskId, String nextStatus, String currentStage, Long updatedBy) { return 0; }
+        @Override public int queuePending(Long taskId, String currentStage, Long updatedBy) { return 0; }
+        @Override public int failWaiting(Long taskId, String currentStage, String errorMessage, Long updatedBy) { return 0; }
+        @Override public int resetFailedToPending(Long taskId, String currentStage, Long updatedBy) { return 0; }
 
         @Override
         public int cancelWaiting(Long taskId, Long updatedBy) { return 0; }
@@ -217,6 +232,17 @@ class TaskWorkerApplicationServiceTest {
             }
             task.setLeaseUntil(LocalDateTime.now().plusSeconds(leaseSeconds));
             task.setLastHeartbeatAt(LocalDateTime.now());
+            return 1;
+        }
+
+        @Override
+        public int updateRunningStage(Long taskId, String workerId, String currentStage) {
+            GenerateTask task = findById(taskId).orElse(null);
+            if (task == null || !"RUNNING".equals(task.getStatus()) || !workerId.equals(task.getWorkerId())
+                    || Boolean.TRUE.equals(task.getCancelRequested())) {
+                return 0;
+            }
+            task.setCurrentStage(currentStage);
             return 1;
         }
 

@@ -52,6 +52,21 @@ public class MyBatisTaskRepository implements TaskRepository {
     }
 
     @Override
+    public int queuePending(Long taskId, String currentStage, Long updatedBy) {
+        return taskMapper.queuePending(taskId, currentStage, updatedBy);
+    }
+
+    @Override
+    public int failWaiting(Long taskId, String currentStage, String errorMessage, Long updatedBy) {
+        return taskMapper.failWaiting(taskId, currentStage, errorMessage, updatedBy);
+    }
+
+    @Override
+    public int resetFailedToPending(Long taskId, String currentStage, Long updatedBy) {
+        return taskMapper.resetFailedToPending(taskId, currentStage, updatedBy);
+    }
+
+    @Override
     public int cancelWaiting(Long taskId, Long updatedBy) {
         return taskMapper.cancelWaiting(taskId, updatedBy);
     }
@@ -69,6 +84,11 @@ public class MyBatisTaskRepository implements TaskRepository {
     @Override
     public int heartbeat(Long taskId, String workerId, long leaseSeconds) {
         return taskMapper.heartbeat(taskId, workerId, leaseSeconds);
+    }
+
+    @Override
+    public int updateRunningStage(Long taskId, String workerId, String currentStage) {
+        return taskMapper.updateRunningStage(taskId, workerId, currentStage);
     }
 
     @Override

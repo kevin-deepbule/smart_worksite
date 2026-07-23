@@ -46,6 +46,15 @@ logging:
     level: "%5p [requestId:%X{requestId:-}]"
 
 app:
+  review:
+    parse-poll-limit: ${REVIEW_PARSE_POLL_LIMIT:20}
+    parse-poll-delay-ms: ${REVIEW_PARSE_POLL_DELAY_MS:2000}
+    max-model-calls: ${REVIEW_MAX_MODEL_CALLS:10000}
+    chunk:
+      max-chars: ${REVIEW_CHUNK_MAX_CHARS:6000}
+      overlap-chars: ${REVIEW_CHUNK_OVERLAP_CHARS:600}
+      max-chunks: ${REVIEW_MAX_CHUNKS:500}
+      max-document-chars: ${REVIEW_MAX_DOCUMENT_CHARS:2000000}
   auth:
     jwt:
       secret: ${JWT_SECRET:SmartWorksiteJwtSecretKeyMustBe256BitsOrLongerForHS256Algorithm!!}
@@ -68,6 +77,7 @@ app:
       max-pages: ${FILE_PARSE_MAX_PAGES:100}
       result-preview-length: ${FILE_PARSE_RESULT_PREVIEW_LENGTH:2000}
       max-input-chars: ${FILE_PARSE_MAX_INPUT_CHARS:120000}
+      max-document-chars: ${FILE_PARSE_MAX_DOCUMENT_CHARS:2000000}
       qwen-vl:
         endpoint: ${QWEN_VL_ENDPOINT:}
         api-key: ${QWEN_VL_API_KEY:}

@@ -12,6 +12,8 @@ public class DocumentParseRequest {
     private String language;
     private String textContent;
     private String imageDataUrl;
+    private int partIndex = 1;
+    private int partCount = 1;
 
     public Long getProjectId() {
         return projectId;
@@ -91,5 +93,21 @@ public class DocumentParseRequest {
 
     public void setImageDataUrl(String imageDataUrl) {
         this.imageDataUrl = imageDataUrl;
+    }
+
+    public int getPartIndex() {
+        return partIndex;
+    }
+
+    public void setPartIndex(int partIndex) {
+        this.partIndex = partIndex;
+    }
+
+    public int getPartCount() {
+        return partCount;
+    }
+
+    public void setPartCount(int partCount) {
+        this.partCount = partCount;
     }
 }

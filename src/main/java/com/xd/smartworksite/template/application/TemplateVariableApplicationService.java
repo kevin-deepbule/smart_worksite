@@ -55,7 +55,7 @@ public class TemplateVariableApplicationService {
 
     public List<String> listVariables(Long templateId) {
         Template template = requireTemplate(templateId, false);
-        return readVariables(openTemplateFile(template));
+        return new ArrayList<>(readVariableDefinitions(template, openTemplateFile(template)).keySet());
     }
 
     public List<String> listReportVariables(Long templateId) {
@@ -63,13 +63,14 @@ public class TemplateVariableApplicationService {
         if (!TemplateCategory.REPORT.name().equals(template.getTemplateCategory())) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, "template is not a report template");
         }
-        return readVariables(openTemplateFile(template));
+        return new ArrayList<>(readVariableDefinitions(template, openTemplateFile(template)).keySet());
     }
 
     public List<TemplateVariableDescriptionResponse> listDescriptions(Long templateId) {
         Template template = requireTemplate(templateId, false);
         FileObjectContent file = openTemplateFile(template);
-        List<String> parsedVariables = readVariables(file);
+        Map<String, String> parsedDefinitions = readVariableDefinitions(template, file);
+        List<String> parsedVariables = new ArrayList<>(parsedDefinitions.keySet());
         Map<String, TemplateVariableDescription> persisted = new HashMap<>();
         for (TemplateVariableDescription record : descriptionRepository.findActiveByTemplateAndFile(
                 template.getId(), file.getFileId())) {
@@ -80,7 +81,9 @@ public class TemplateVariableApplicationService {
             TemplateVariableDescription record = persisted.get(variableName);
             response.add(new TemplateVariableDescriptionResponse(
                     variableName,
-                    record == null || record.getDescription() == null ? "" : record.getDescription()
+                    record == null || record.getDescription() == null
+                            ? parsedDefinitions.getOrDefault(variableName, "")
+                            : record.getDescription()
             ));
         }
         return response;
@@ -98,7 +101,7 @@ public class TemplateVariableApplicationService {
         }
         Template template = requireTemplate(templateId, true);
         FileObjectContent file = openTemplateFile(template);
-        List<String> parsedVariables = readVariables(file);
+        List<String> parsedVariables = new ArrayList<>(readVariableDefinitions(template, file).keySet());
         Map<String, String> requestDescriptions = normalizeDescriptions(request.getVariables());
         validateVariableSet(parsedVariables, requestDescriptions.keySet());
 
@@ -164,14 +167,21 @@ public class TemplateVariableApplicationService {
                 template.getFileId(), template.getProjectId(), template.getId());
     }
 
-    private List<String> readVariables(FileObjectContent file) {
+    private Map<String, String> readVariableDefinitions(Template template, FileObjectContent file) {
         if (!TemplateFileSupport.isSupported(file.getFileName())) {
             closeQuietly(file);
             String format = TemplateFileSupport.isPdf(file.getFileName()) ? "PDF" : TemplateFileSupport.extension(file.getFileName());
             throw new BusinessException(ErrorCode.PARAM_ERROR, "unsupported template variable format: " + format);
         }
         try (InputStream inputStream = file.getInputStream()) {
-            return variableScanner.scan(file.getFileName(), inputStream);
+            if (TemplateCategory.REVIEW.name().equals(template.getTemplateCategory())) {
+                return variableScanner.scanReviewDescriptions(file.getFileName(), inputStream);
+            }
+            Map<String, String> definitions = new LinkedHashMap<>();
+            for (String variableName : variableScanner.scan(file.getFileName(), inputStream)) {
+                definitions.put(variableName, "");
+            }
+            return definitions;
         } catch (IllegalArgumentException ex) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, ex.getMessage());
         } catch (IOException | RuntimeException ex) {

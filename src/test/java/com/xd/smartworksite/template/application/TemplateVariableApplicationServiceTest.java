@@ -172,11 +172,30 @@ class TemplateVariableApplicationServiceTest {
     @Test
     void reportCompatibilityVariablesRejectReviewTemplates() {
         template.setTemplateCategory("REVIEW");
-        setTemplateContent("{{ var_rule_name }}");
+        setTemplateContent("{{ var_rule_name : 检查规则名称是否完整 }}");
 
         assertThatThrownBy(() -> service.listReportVariables(10L))
                 .isInstanceOfSatisfying(BusinessException.class, ex ->
                         assertThat(ex.getCode()).isEqualTo(ErrorCode.PARAM_ERROR.getCode()));
+    }
+
+    @Test
+    void reviewDescriptionsCanBeEditedAndReadBack() {
+        template.setTemplateCategory("REVIEW");
+        setTemplateContent("{{ var_rule_name : 检查规则名称是否完整 }}");
+
+        assertThat(service.listDescriptions(10L)).singleElement().satisfies(description -> {
+            assertThat(description.getVariableName()).isEqualTo("var_rule_name");
+            assertThat(description.getDescription()).isEqualTo("检查规则名称是否完整");
+        });
+
+        assertThat(service.upsertDescriptions(10L, request(
+                item("var_rule_name", "检查规则名称、编号和适用范围是否完整")
+        ))).singleElement().satisfies(description ->
+                assertThat(description.getDescription()).isEqualTo("检查规则名称、编号和适用范围是否完整"));
+
+        assertThat(service.listDescriptions(10L)).singleElement().satisfies(description ->
+                assertThat(description.getDescription()).isEqualTo("检查规则名称、编号和适用范围是否完整"));
     }
 
     private void setTemplateContent(String content) {

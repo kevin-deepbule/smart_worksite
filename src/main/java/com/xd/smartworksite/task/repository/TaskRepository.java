@@ -23,6 +23,12 @@ public interface TaskRepository {
 
     int markRetrying(Long taskId, String nextStatus, String currentStage, Long updatedBy);
 
+    int queuePending(Long taskId, String currentStage, Long updatedBy);
+
+    int failWaiting(Long taskId, String currentStage, String errorMessage, Long updatedBy);
+
+    int resetFailedToPending(Long taskId, String currentStage, Long updatedBy);
+
     int cancelWaiting(Long taskId, Long updatedBy);
 
     int requestRunningCancel(Long taskId, Long updatedBy);
@@ -30,6 +36,8 @@ public interface TaskRepository {
     int claimQueuedTask(Long taskId, String workerId, long leaseSeconds, String currentStage);
 
     int heartbeat(Long taskId, String workerId, long leaseSeconds);
+
+    int updateRunningStage(Long taskId, String workerId, String currentStage);
 
     int completeSuccess(Long taskId, String workerId, String currentStage);
 

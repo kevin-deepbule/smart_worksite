@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import AppUpload from '../../components/common/AppUpload.vue';
@@ -8,11 +8,19 @@ import JsonViewer from '../../components/common/JsonViewer.vue';
 import TaskProgress from '../../components/common/TaskProgress.vue';
 import StatusTag from '../../components/common/StatusTag.vue';
 import EmptyState from '../../components/common/EmptyState.vue';
-import { fetchReviewRecord, fetchReviewTemplates, submitReviewRecord, updateReviewIssue } from '../../api/review';
+import ReviewHistoryPanel from '../../components/review/ReviewHistoryPanel.vue';
+import {
+  cancelReviewRecord,
+  fetchReviewRecord,
+  fetchReviewRuleResults,
+  fetchReviewTemplates,
+  submitReviewRecord,
+  updateReviewIssue
+} from '../../api/review';
 import { fetchTaskStages } from '../../api/task';
 import { useProjectStore } from '../../stores/project';
 import { useUserStore } from '../../stores/user';
-import type { ID, ReviewRecord, ReviewTemplate, TaskStageLog } from '../../api/types';
+import type { ID, ReviewRecord, ReviewRuleResult, ReviewTemplate, TaskStageLog } from '../../api/types';
 
 const router = useRouter();
 const projectStore = useProjectStore();
@@ -27,9 +35,13 @@ const templates = ref<ReviewTemplate[]>([]);
 const selectedTemplateId = ref<ID>('');
 const file = ref<File | null>(null);
 const currentRecord = ref<ReviewRecord | null>(null);
+const ruleResults = ref<ReviewRuleResult[]>([]);
 const submittedInfo = ref<{ recordId?: ID; taskId?: ID; status?: string } | null>(null);
 const logs = ref<TaskStageLog[]>([]);
 const updatingIssueId = ref('');
+const canceling = ref(false);
+const historyRefreshKey = ref(0);
+let pollTimer: ReturnType<typeof setTimeout> | undefined;
 const canManageReview = computed(() => userStore.hasPermission('review:manage'));
 const reviewManageTip = '当前账号没有合规审查管理权限';
 const canSubmit = computed(() => Boolean(canManageReview.value && templates.value.length && selectedTemplateId.value && file.value && !submitting.value));
@@ -41,7 +53,7 @@ const issueStatusOptions = [
 ];
 const reviewSteps = [
   { title: '先准备审查标准', desc: '到模板管理上传审查模板，系统按模板判断文件是否合规。' },
-  { title: '再上传待审文件', desc: '上传施工方案、合同、制度等 Word 或 PDF 文件。' },
+  { title: '再上传待审文件', desc: '上传施工方案、合同、制度等 Word、PDF、TXT 或 Excel 文件。' },
   { title: '最后查看结果', desc: '查看问题位置、修改建议、处理状态和 JSON 结果。' }
 ];
 
@@ -49,8 +61,14 @@ function t(text: string) { return text; }
 function goTemplates() {
   router.push({ path: '/templates', query: { category: 'REVIEW', action: 'upload' } });
 }
-function progressOf(record: ReviewRecord) { return ['SUCCESS', 'COMPLETED', 'FAILED', 'ARCHIVED'].includes(String(record.status)) ? 100 : 60; }
+function progressOf(record: ReviewRecord) {
+  if (typeof record.progress === 'number') return record.progress;
+  return ['SUCCESS', 'COMPLETED', 'FAILED', 'CANCELED', 'ARCHIVED'].includes(String(record.status)) ? 100 : 0;
+}
 function canUpdateIssue(record: ReviewRecord | null) { return canManageReview.value && record?.status === 'COMPLETED'; }
+function isTerminal(record: ReviewRecord) {
+  return ['COMPLETED', 'FAILED', 'CANCELED', 'ARCHIVED'].includes(String(record.status));
+}
 
 async function loadTemplates() {
   loading.value = true;
@@ -76,17 +94,42 @@ async function loadStages(taskId?: ID) {
 }
 
 async function loadRecord(recordId: ID, taskId?: ID, status?: string) {
+  if (pollTimer) {
+    clearTimeout(pollTimer);
+    pollTimer = undefined;
+  }
   resultNotice.value = '';
   submittedInfo.value = { recordId, taskId, status };
   try {
     currentRecord.value = await fetchReviewRecord(recordId);
+    ruleResults.value = await fetchReviewRuleResults(recordId);
     submittedInfo.value = { recordId: currentRecord.value.recordId, taskId: currentRecord.value.taskId, status: currentRecord.value.status };
     await loadStages(currentRecord.value.taskId || taskId);
+    if (!isTerminal(currentRecord.value)) schedulePoll(recordId);
   } catch (err) {
     currentRecord.value = null;
     await loadStages(taskId);
     const detail = err instanceof Error && err.message ? ` ${err.message}` : '';
     resultNotice.value = `${t('审查任务已提交，但结果接口暂不可用，请稍后刷新或联系后端确认。')}${detail}`;
+  }
+}
+
+function schedulePoll(recordId: ID) {
+  if (pollTimer) clearTimeout(pollTimer);
+  pollTimer = setTimeout(() => loadRecord(recordId), 2000);
+}
+
+async function cancelCurrentReview() {
+  if (!currentRecord.value || !canManageReview.value) return;
+  canceling.value = true;
+  try {
+    currentRecord.value = await cancelReviewRecord(currentRecord.value.recordId);
+    ElMessage.success('已提交取消请求');
+    await loadRecord(currentRecord.value.recordId);
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : '取消审核失败');
+  } finally {
+    canceling.value = false;
   }
 }
 
@@ -104,6 +147,7 @@ async function submit() {
   try {
     const result = await submitReviewRecord({ projectId, templateId: selectedTemplateId.value, file: file.value });
     submittedInfo.value = result;
+    historyRefreshKey.value++;
     ElMessage.success(t('审查任务已提交'));
     await loadRecord(result.recordId, result.taskId, result.status);
   } catch (err) {
@@ -127,6 +171,28 @@ async function changeIssueStatus(issueId: string, status: string, comment?: stri
 }
 
 onMounted(loadTemplates);
+watch(
+  () => projectStore.currentProject?.projectId,
+  (projectId, previousProjectId) => {
+    if (previousProjectId === undefined || String(projectId || '') === String(previousProjectId || '')) return;
+    if (pollTimer) {
+      clearTimeout(pollTimer);
+      pollTimer = undefined;
+    }
+    selectedTemplateId.value = '';
+    file.value = null;
+    currentRecord.value = null;
+    ruleResults.value = [];
+    submittedInfo.value = null;
+    logs.value = [];
+    resultNotice.value = '';
+    stageNotice.value = '';
+    void loadTemplates();
+  }
+);
+onUnmounted(() => {
+  if (pollTimer) clearTimeout(pollTimer);
+});
 </script>
 
 <template>
@@ -178,13 +244,57 @@ onMounted(loadTemplates);
           </el-form-item>
         </el-form>
         <div class="upload-title required-label">2. 上传待审文件</div>
-        <AppUpload v-if="canManageReview" :model-value="file ? [file] : []" accept=".doc,.docx,.pdf" :multiple="false" :uploading="submitting" @update:model-value="file = $event[0] || null" />
-        <p class="upload-tip">支持 Word、PDF。选择模板和文件后，点击“发起审查”。</p>
+        <AppUpload v-if="canManageReview" :model-value="file ? [file] : []" accept=".doc,.docx,.pdf,.txt,.xls,.xlsx" :multiple="false" :uploading="submitting" @update:model-value="file = $event[0] || null" />
+        <p class="upload-tip">支持 Word、PDF、TXT、Excel。选择模板和文件后，点击“发起审查”。</p>
       </template>
     </el-card>
+    <ReviewHistoryPanel
+      :project-id="projectStore.currentProject?.projectId"
+      :active-record-id="currentRecord?.recordId"
+      :refresh-key="historyRefreshKey"
+      @select="(record) => loadRecord(record.recordId, record.taskId, record.status)"
+    />
     <el-card v-if="submittedInfo && !currentRecord" class="work-card"><h3 class="panel-title">{{ t('已提交任务') }}</h3><p>recordId: {{ submittedInfo.recordId || '-' }}</p><p>taskId: {{ submittedInfo.taskId || '-' }}</p><p>status: {{ submittedInfo.status || '-' }}</p></el-card>
-    <EmptyState v-if="!loading && !resultNotice && !currentRecord && !submittedInfo" :description="t('暂无审查记录，请上传文件后发起审查。')" />
-    <template v-else-if="currentRecord"><el-card class="work-card"><h3 class="panel-title">{{ t('审查进度') }}</h3><TaskProgress :percentage="progressOf(currentRecord)" :status="currentRecord.status" :logs="logs" /></el-card><div class="two-col"><el-card class="work-card"><h3 class="panel-title">{{ t('问题列表') }}</h3><AppTable :data="currentRecord.issues || []" :columns="[{ prop: 'severity', label: t('严重程度'), width: 90 }, { prop: 'location', label: t('问题定位') }, { prop: 'ruleName', label: t('规则名称') }, { prop: 'description', label: t('问题描述') }, { prop: 'suggestion', label: t('修改建议') }]"><template #empty><EmptyState :description="t('暂无审查问题。')" /></template><el-table-column :label="t('问题状态')" width="140"><template #default="{ row }"><StatusTag :status="row.status || 'OPEN'" /></template></el-table-column><el-table-column :label="t('处理')" width="180"><template #default="{ row }"><el-select :model-value="row.status || 'OPEN'" size="small" :disabled="!canUpdateIssue(currentRecord)" :loading="updatingIssueId === row.issueId" @change="(value: string) => changeIssueStatus(row.issueId, value, row.comment)"><el-option v-for="item in issueStatusOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></template></el-table-column></AppTable></el-card><JsonViewer :value="currentRecord" :title="t('审查 JSON 结果')" /></div></template>
+    <EmptyState v-if="!loading && !resultNotice && !currentRecord && !submittedInfo" :description="t('请选择一条审核历史记录查看结果，或上传文件发起新的审核。')" />
+    <template v-else-if="currentRecord">
+      <el-card class="work-card">
+        <div class="progress-header">
+          <div>
+            <h3 class="panel-title">{{ t('审查进度') }}</h3>
+            <p class="upload-tip">当前阶段：{{ currentRecord.currentStage || '-' }}；规则 {{ currentRecord.ruleCompleted || 0 }}/{{ currentRecord.ruleTotal || 0 }}；文档块 {{ currentRecord.chunkTotal || 0 }}</p>
+          </div>
+          <el-button v-if="canManageReview && !isTerminal(currentRecord)" type="danger" plain :loading="canceling" @click="cancelCurrentReview">取消审核</el-button>
+        </div>
+        <TaskProgress :percentage="progressOf(currentRecord)" :status="currentRecord.status" :logs="logs" />
+        <el-alert v-if="currentRecord.summary" :title="currentRecord.summary" type="info" :closable="false" style="margin-top: 12px" />
+      </el-card>
+      <el-card class="work-card">
+        <h3 class="panel-title">{{ t('规则审核结果') }}</h3>
+        <AppTable :data="ruleResults" :columns="[
+          { prop: 'ruleCode', label: t('规则变量'), width: 180 },
+          { prop: 'ruleDescription', label: t('规则描述') },
+          { prop: 'complianceStatus', label: t('审核结论'), width: 150, slot: 'complianceStatus' },
+          { prop: 'reason', label: t('原因') },
+          { prop: 'suggestion', label: t('整改建议') }
+        ]">
+          <template #empty><EmptyState :description="t('规则尚未完成审核。')" /></template>
+          <template #complianceStatus="{ row }">
+            <StatusTag :status="row.complianceStatus || row.executionStatus" />
+          </template>
+        </AppTable>
+      </el-card>
+      <div class="two-col">
+        <el-card class="work-card">
+          <h3 class="panel-title">{{ t('问题列表') }}</h3>
+          <AppTable :data="currentRecord.issues || []" :columns="[{ prop: 'severity', label: t('严重程度'), width: 90 }, { prop: 'location', label: t('问题定位') }, { prop: 'ruleName', label: t('规则名称') }, { prop: 'description', label: t('问题描述') }, { prop: 'suggestion', label: t('修改建议') }]">
+            <template #empty><EmptyState :description="t('暂无审查问题。')" /></template>
+            <el-table-column :label="t('问题状态')" width="140"><template #default="{ row }"><StatusTag :status="row.status || 'OPEN'" /></template></el-table-column>
+            <el-table-column :label="t('处理')" width="180"><template #default="{ row }"><el-select :model-value="row.status || 'OPEN'" size="small" :disabled="!canUpdateIssue(currentRecord)" :loading="updatingIssueId === row.issueId" @change="(value: string) => changeIssueStatus(row.issueId, value, row.comment)"><el-option v-for="item in issueStatusOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></template></el-table-column>
+          </AppTable>
+        </el-card>
+        <JsonViewer :value="currentRecord" :title="t('审查 JSON 结果')" />
+      </div>
+    </template>
   </div>
 </template>
 
@@ -221,6 +331,7 @@ onMounted(loadTemplates);
 .guide-step p { margin: 0; color: var(--sw-muted); line-height: 1.6; }
 .upload-title { margin: 4px 0 10px; font-weight: 700; }
 .upload-tip { margin: 10px 0 0; color: var(--sw-muted); font-size: 13px; }
+.progress-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 @media (max-width: 900px) {
   .review-guide { grid-template-columns: 1fr; }
 }

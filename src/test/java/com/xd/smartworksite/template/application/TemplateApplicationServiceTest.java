@@ -182,16 +182,16 @@ class TemplateApplicationServiceTest {
     }
 
     @Test
-    void reviewTemplateUploadDoesNotParseOrPersistVariables() {
+    void reviewTemplateUploadParsesAndPersistsRuleDescriptions() {
         InMemoryTemplateRepository templateRepository = new InMemoryTemplateRepository();
         CapturingStorageAdapter storageAdapter = new CapturingStorageAdapter();
         CapturingTemplateVariableDescriptionRepository variableRepository = new CapturingTemplateVariableDescriptionRepository();
         TemplateApplicationService service = newService(templateRepository, storageAdapter, variableRepository);
         MockMultipartFile file = new MockMultipartFile(
                 "file",
-                "review-template.pdf",
-                "application/pdf",
-                "not-a-real-pdf {{ var_review_rule }}".getBytes(StandardCharsets.UTF_8)
+                "review-template.md",
+                "text/markdown",
+                "{{var_review_rule:检查施工方案是否包含完整的安全措施}}".getBytes(StandardCharsets.UTF_8)
         );
 
         TemplateResponse response = service.uploadTemplate(
@@ -200,7 +200,34 @@ class TemplateApplicationServiceTest {
 
         assertThat(response.getTemplateCategory()).isEqualTo("REVIEW");
         assertThat(storageAdapter.objects).hasSize(1);
-        assertThat(variableRepository.records).isEmpty();
+        assertThat(variableRepository.records).singleElement().satisfies(record -> {
+            assertThat(record.getVariableName()).isEqualTo("var_review_rule");
+            assertThat(record.getDescription()).isEqualTo("检查施工方案是否包含完整的安全措施");
+        });
+    }
+
+    @Test
+    void reviewTemplateWithoutRulesFailsBeforeStorageUpload() {
+        InMemoryTemplateRepository templateRepository = new InMemoryTemplateRepository();
+        CapturingStorageAdapter storageAdapter = new CapturingStorageAdapter();
+        TemplateApplicationService service = newService(
+                templateRepository,
+                storageAdapter,
+                new CapturingTemplateVariableDescriptionRepository()
+        );
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "review-template.md",
+                "text/markdown",
+                "普通审查说明".getBytes(StandardCharsets.UTF_8)
+        );
+
+        assertThatThrownBy(() -> service.uploadTemplate(
+                1L, "REVIEW", "审查模板", "SAFETY_REVIEW", null, "v1", null, file
+        )).isInstanceOfSatisfying(BusinessException.class, ex ->
+                assertThat(ex.getMessage()).contains("至少需要一个"));
+
+        assertThat(storageAdapter.objects).isEmpty();
     }
 
     @Test
@@ -321,7 +348,7 @@ class TemplateApplicationServiceTest {
                 "file",
                 "review-template.md",
                 "text/markdown",
-                "{{ var_rule_name }}".getBytes(StandardCharsets.UTF_8)
+                "{{ var_rule_name : 检查规则名称是否完整 }}".getBytes(StandardCharsets.UTF_8)
         );
         TemplateResponse uploaded = service.uploadTemplate(
                 1L,

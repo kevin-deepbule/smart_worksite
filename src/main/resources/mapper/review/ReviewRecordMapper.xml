@@ -8,9 +8,69 @@
         <result property="templateId" column="template_id"/>
         <result property="fileId" column="file_id"/>
         <result property="taskId" column="task_id"/>
+        <result property="parseRecordId" column="parse_record_id"/>
         <result property="status" column="status"/>
+        <result property="currentStage" column="current_stage"/>
+        <result property="progress" column="progress"/>
+        <result property="overallStatus" column="overall_status"/>
+        <result property="summary" column="summary"/>
+        <result property="ruleTotal" column="rule_total"/>
+        <result property="ruleCompleted" column="rule_completed"/>
+        <result property="chunkTotal" column="chunk_total"/>
         <result property="issuesJson" column="issues_json"/>
         <result property="resultJson" column="result_json"/>
+        <result property="errorMessage" column="error_message"/>
+        <result property="startedAt" column="started_at"/>
+        <result property="completedAt" column="completed_at"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+        <result property="createdBy" column="created_by"/>
+        <result property="updatedBy" column="updated_by"/>
+    </resultMap>
+
+    <resultMap id="ReviewRuleResultMap" type="com.xd.smartworksite.review.domain.ReviewRuleResult">
+        <id property="id" column="id"/>
+        <result property="projectId" column="project_id"/>
+        <result property="reviewRecordId" column="review_record_id"/>
+        <result property="templateId" column="template_id"/>
+        <result property="templateFileId" column="template_file_id"/>
+        <result property="ruleCode" column="rule_code"/>
+        <result property="ruleDescription" column="rule_description"/>
+        <result property="ruleOrder" column="rule_order"/>
+        <result property="executionStatus" column="execution_status"/>
+        <result property="complianceStatus" column="compliance_status"/>
+        <result property="reason" column="reason"/>
+        <result property="suggestion" column="suggestion"/>
+        <result property="evidenceJson" column="evidence_json"/>
+        <result property="confidence" column="confidence"/>
+        <result property="modelTraceId" column="model_trace_id"/>
+        <result property="errorMessage" column="error_message"/>
+        <result property="startedAt" column="started_at"/>
+        <result property="completedAt" column="completed_at"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+        <result property="createdBy" column="created_by"/>
+        <result property="updatedBy" column="updated_by"/>
+    </resultMap>
+
+    <resultMap id="ReviewDocumentChunkMap" type="com.xd.smartworksite.review.domain.ReviewDocumentChunk">
+        <id property="id" column="id"/>
+        <result property="projectId" column="project_id"/>
+        <result property="reviewRecordId" column="review_record_id"/>
+        <result property="parseRecordId" column="parse_record_id"/>
+        <result property="chunkNo" column="chunk_no"/>
+        <result property="chunkCode" column="chunk_code"/>
+        <result property="headingPath" column="heading_path"/>
+        <result property="pageStart" column="page_start"/>
+        <result property="pageEnd" column="page_end"/>
+        <result property="sheetName" column="sheet_name"/>
+        <result property="rowStart" column="row_start"/>
+        <result property="rowEnd" column="row_end"/>
+        <result property="contentObjectName" column="content_object_name"/>
+        <result property="contentHash" column="content_hash"/>
+        <result property="charCount" column="char_count"/>
+        <result property="tokenCount" column="token_count"/>
+        <result property="status" column="status"/>
         <result property="errorMessage" column="error_message"/>
         <result property="createdAt" column="created_at"/>
         <result property="updatedAt" column="updated_at"/>
@@ -19,17 +79,21 @@
     </resultMap>
 
     <sql id="ReviewRecordColumns">
-        id, project_id, template_id, file_id, task_id, status, issues_json,
-        result_json, error_message, created_at, updated_at, created_by, updated_by
+        id, project_id, template_id, file_id, task_id, parse_record_id, status,
+        current_stage, progress, overall_status, summary, rule_total, rule_completed,
+        chunk_total, issues_json, result_json, error_message, started_at, completed_at,
+        created_at, updated_at, created_by, updated_by
     </sql>
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         insert into review_record (
-            project_id, template_id, file_id, task_id, status, issues_json,
-            result_json, error_message, created_by, updated_by
+            project_id, template_id, file_id, task_id, parse_record_id, status,
+            current_stage, progress, overall_status, summary, rule_total, rule_completed,
+            chunk_total, issues_json, result_json, error_message, created_by, updated_by
         ) values (
-            #{projectId}, #{templateId}, #{fileId}, #{taskId}, #{status}, #{issuesJson},
-            #{resultJson}, #{errorMessage}, #{createdBy}, #{updatedBy}
+            #{projectId}, #{templateId}, #{fileId}, #{taskId}, #{parseRecordId}, #{status},
+            #{currentStage}, #{progress}, #{overallStatus}, #{summary}, #{ruleTotal}, #{ruleCompleted},
+            #{chunkTotal}, #{issuesJson}, #{resultJson}, #{errorMessage}, #{createdBy}, #{updatedBy}
         )
     </insert>
 
@@ -62,35 +126,131 @@
         order by created_at desc, id desc
     </select>
 
-    <update id="markProcessing">
+    <select id="selectWaitingForParse" resultMap="ReviewRecordResultMap">
+        select <include refid="ReviewRecordColumns"/>
+        from review_record
+        where status = 'PENDING'
+          and current_stage = 'PARSING'
+          and parse_record_id is not null
+          and task_id is not null
+          and deleted = 0
+        order by created_at asc, id asc
+        limit #{limit}
+    </select>
+
+    <update id="linkTask">
         update review_record
-        set status = 'PROCESSING',
+        set task_id = #{taskId},
+            updated_by = #{updatedBy}
+        where id = #{recordId}
+          and task_id is null
+          and status = 'PENDING'
+          and deleted = 0
+    </update>
+
+    <update id="markParseReady">
+        update review_record
+        set current_stage = 'QUEUED',
+            progress = 20,
             error_message = null,
             updated_by = #{updatedBy}
         where id = #{recordId}
+          and status = 'PENDING'
+          and current_stage = 'PARSING'
+          and deleted = 0
+    </update>
+
+    <update id="markProcessing">
+        update review_record
+        set status = 'PROCESSING',
+            current_stage = 'CHUNKING',
+            progress = greatest(progress, 25),
+            error_message = null,
+            started_at = coalesce(started_at, current_timestamp),
+            updated_by = #{updatedBy}
+        where id = #{recordId}
           and status in ('PENDING', 'FAILED')
+          and current_stage in ('QUEUED', 'FAILED')
           and deleted = 0
     </update>
 
     <update id="markCompleted">
         update review_record
         set status = 'COMPLETED',
+            current_stage = 'FINISHED',
+            progress = 100,
+            overall_status = #{overallStatus},
+            summary = #{summary},
             issues_json = #{issuesJson},
             result_json = #{resultJson},
             error_message = null,
+            completed_at = current_timestamp,
             updated_by = #{updatedBy}
         where id = #{recordId}
           and status = 'PROCESSING'
           and deleted = 0
     </update>
 
+    <update id="updateProgress">
+        update review_record
+        set current_stage = #{currentStage},
+            progress = #{progress},
+            <if test="ruleCompleted != null">
+                rule_completed = #{ruleCompleted},
+            </if>
+            <if test="chunkTotal != null">
+                chunk_total = #{chunkTotal},
+            </if>
+            updated_by = #{updatedBy}
+        where id = #{recordId}
+          and status = 'PROCESSING'
+          and deleted = 0
+    </update>
+
+    <update id="resetForParseRetry">
+        update review_record
+        set parse_record_id = #{parseRecordId},
+            status = 'PENDING',
+            current_stage = 'PARSING',
+            progress = 5,
+            error_message = null,
+            completed_at = null,
+            updated_by = #{updatedBy}
+        where id = #{recordId}
+          and status = 'FAILED'
+          and deleted = 0
+    </update>
+
+    <update id="updateIssues">
+        update review_record
+        set issues_json = #{issuesJson},
+            result_json = #{resultJson},
+            updated_by = #{updatedBy}
+        where id = #{recordId}
+          and status = 'COMPLETED'
+          and deleted = 0
+    </update>
+
     <update id="markFailed">
         update review_record
         set status = 'FAILED',
+            current_stage = 'FAILED',
             error_message = #{errorMessage},
+            completed_at = current_timestamp,
             updated_by = #{updatedBy}
         where id = #{recordId}
           and status in ('PENDING', 'PROCESSING', 'FAILED')
+          and deleted = 0
+    </update>
+
+    <update id="markCanceled">
+        update review_record
+        set status = 'CANCELED',
+            current_stage = 'CANCELED',
+            completed_at = current_timestamp,
+            updated_by = #{updatedBy}
+        where id = #{recordId}
+          and status in ('PENDING', 'PROCESSING')
           and deleted = 0
     </update>
 
@@ -107,6 +267,129 @@
         set status = 'ARCHIVED',
             updated_by = #{updatedBy}
         where id = #{recordId}
+          and deleted = 0
+    </update>
+
+    <insert id="insertRuleResult" useGeneratedKeys="true" keyProperty="id">
+        insert into review_rule_result (
+            project_id, review_record_id, template_id, template_file_id,
+            rule_code, rule_description, rule_order, execution_status,
+            evidence_json, created_by, updated_by
+        ) values (
+            #{projectId}, #{reviewRecordId}, #{templateId}, #{templateFileId},
+            #{ruleCode}, #{ruleDescription}, #{ruleOrder}, #{executionStatus},
+            #{evidenceJson}, #{createdBy}, #{updatedBy}
+        )
+    </insert>
+
+    <select id="selectRuleResults" resultMap="ReviewRuleResultMap">
+        select id, project_id, review_record_id, template_id, template_file_id,
+               rule_code, rule_description, rule_order, execution_status,
+               compliance_status, reason, suggestion, evidence_json, confidence,
+               model_trace_id, error_message, started_at, completed_at,
+               created_at, updated_at, created_by, updated_by
+        from review_rule_result
+        where review_record_id = #{recordId}
+          and deleted = 0
+        order by rule_order asc, id asc
+    </select>
+
+    <select id="selectRuleResult" resultMap="ReviewRuleResultMap">
+        select id, project_id, review_record_id, template_id, template_file_id,
+               rule_code, rule_description, rule_order, execution_status,
+               compliance_status, reason, suggestion, evidence_json, confidence,
+               model_trace_id, error_message, started_at, completed_at,
+               created_at, updated_at, created_by, updated_by
+        from review_rule_result
+        where review_record_id = #{recordId}
+          and rule_code = #{ruleCode}
+          and deleted = 0
+    </select>
+
+    <update id="markRuleRunning">
+        update review_rule_result
+        set execution_status = 'RUNNING',
+            compliance_status = null,
+            reason = null,
+            suggestion = null,
+            evidence_json = json_array(),
+            confidence = null,
+            model_trace_id = null,
+            error_message = null,
+            started_at = current_timestamp,
+            completed_at = null,
+            updated_by = #{updatedBy}
+        where id = #{ruleResultId}
+          and execution_status in ('PENDING', 'FAILED', 'RUNNING')
+          and deleted = 0
+    </update>
+
+    <update id="markRuleSucceeded">
+        update review_rule_result
+        set execution_status = 'SUCCESS',
+            compliance_status = #{complianceStatus},
+            reason = #{reason},
+            suggestion = #{suggestion},
+            evidence_json = #{evidenceJson},
+            confidence = #{confidence},
+            model_trace_id = #{modelTraceId},
+            error_message = null,
+            completed_at = current_timestamp,
+            updated_by = #{updatedBy}
+        where id = #{ruleResultId}
+          and execution_status = 'RUNNING'
+          and deleted = 0
+    </update>
+
+    <update id="markRuleFailed">
+        update review_rule_result
+        set execution_status = 'FAILED',
+            error_message = #{errorMessage},
+            completed_at = current_timestamp,
+            updated_by = #{updatedBy}
+        where id = #{ruleResultId}
+          and execution_status in ('PENDING', 'RUNNING', 'FAILED')
+          and deleted = 0
+    </update>
+
+    <insert id="insertChunk" useGeneratedKeys="true" keyProperty="id">
+        insert into review_document_chunk (
+            project_id, review_record_id, parse_record_id, chunk_no, chunk_code,
+            heading_path, page_start, page_end, sheet_name, row_start, row_end,
+            content_object_name, content_hash, char_count, token_count, status,
+            error_message, created_by, updated_by
+        ) values (
+            #{projectId}, #{reviewRecordId}, #{parseRecordId}, #{chunkNo}, #{chunkCode},
+            #{headingPath}, #{pageStart}, #{pageEnd}, #{sheetName}, #{rowStart}, #{rowEnd},
+            #{contentObjectName}, #{contentHash}, #{charCount}, #{tokenCount}, #{status},
+            #{errorMessage}, #{createdBy}, #{updatedBy}
+        )
+    </insert>
+
+    <select id="selectChunks" resultMap="ReviewDocumentChunkMap">
+        select id, project_id, review_record_id, parse_record_id, chunk_no, chunk_code,
+               heading_path, page_start, page_end, sheet_name, row_start, row_end,
+               content_object_name, content_hash, char_count, token_count, status,
+               error_message, created_at, updated_at, created_by, updated_by
+        from review_document_chunk
+        where review_record_id = #{recordId}
+          and deleted = 0
+        order by chunk_no asc, id asc
+    </select>
+
+    <update id="softDeleteRules">
+        update review_rule_result
+        set deleted = 1,
+            updated_by = #{updatedBy}
+        where review_record_id = #{recordId}
+          and deleted = 0
+    </update>
+
+    <update id="softDeleteChunks">
+        update review_document_chunk
+        set deleted = 1,
+            updated_by = #{updatedBy}
+        where review_record_id = #{recordId}
           and deleted = 0
     </update>
 </mapper>

@@ -63,6 +63,40 @@ public class TaskWorkerApplicationService {
     }
 
     @Transactional
+    public void renewLease(Long taskId, String workerId, long leaseSeconds) {
+        requireTaskId(taskId);
+        String normalizedWorkerId = requireWorkerId(workerId);
+        long safeLeaseSeconds = requirePositiveLease(leaseSeconds);
+        int updated = taskRepository.heartbeat(taskId, normalizedWorkerId, safeLeaseSeconds);
+        if (updated == 0) {
+            throw new BusinessException(ErrorCode.CONFLICT, "task lease renewal rejected");
+        }
+    }
+
+    @Transactional
+    public GenerateTask recordStage(Long taskId, String workerId, String stageCode, String outputSummary) {
+        requireTaskId(taskId);
+        String normalizedWorkerId = requireWorkerId(workerId);
+        String stage = normalizeStage(stageCode, "RUNNING");
+        int updated = taskRepository.updateRunningStage(taskId, normalizedWorkerId, stage);
+        if (updated == 0) {
+            throw new BusinessException(ErrorCode.CONFLICT, "task stage update rejected");
+        }
+        GenerateTask task = requireTask(taskId);
+        insertStage(task, stage, TaskStatus.RUNNING.name(), outputSummary, null);
+        return task;
+    }
+
+    public boolean isCancellationRequested(Long taskId, String workerId) {
+        GenerateTask task = requireTask(taskId);
+        String normalizedWorkerId = requireWorkerId(workerId);
+        if (!normalizedWorkerId.equals(task.getWorkerId())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "task is not owned by current worker");
+        }
+        return Boolean.TRUE.equals(task.getCancelRequested());
+    }
+
+    @Transactional
     public GenerateTask completeSuccess(Long taskId, String workerId, String currentStage) {
         requireTaskId(taskId);
         String normalizedWorkerId = requireWorkerId(workerId);

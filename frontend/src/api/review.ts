@@ -1,7 +1,7 @@
 
 import request from '../utils/request';
 import { mockReviewRecord, mockReviewTemplates } from '../mocks/review';
-import type { ID, PageQuery, PageResult, ReviewRecord, ReviewTemplate } from './types';
+import type { ID, PageQuery, PageResult, ReviewRecord, ReviewRuleResult, ReviewTemplate } from './types';
 import { useModuleMock } from './mock';
 
 const useReviewRecordMock = useModuleMock('VITE_USE_REVIEW_RECORD_MOCK', false);
@@ -47,6 +47,11 @@ export async function fetchReviewRecord(recordId: ID) {
   return request.get<ReviewRecord>(`/review/records/${recordId}`);
 }
 
+export async function fetchReviewRuleResults(recordId: ID) {
+  if (useReviewRecordMock) return [] satisfies ReviewRuleResult[];
+  return request.get<ReviewRuleResult[]>(`/review/records/${recordId}/rule-results`);
+}
+
 
 export async function fetchReviewRecords(params: PageQuery = {}) {
   if (useReviewRecordMock) return { pageNo: params.pageNo || 1, pageSize: params.pageSize || 20, total: mockRecords.length, records: mockRecords } satisfies PageResult<ReviewRecord>;
@@ -56,6 +61,11 @@ export async function fetchReviewRecords(params: PageQuery = {}) {
 export async function retryReviewRecord(recordId: ID) {
   if (useReviewRecordMock) return { ...findMockReviewRecord(recordId), status: 'QUEUED' } satisfies ReviewRecord;
   return request.post<ReviewRecord>(`/review/records/${recordId}/retry`);
+}
+
+export async function cancelReviewRecord(recordId: ID) {
+  if (useReviewRecordMock) return { ...findMockReviewRecord(recordId), status: 'CANCELED' } satisfies ReviewRecord;
+  return request.post<ReviewRecord>(`/review/records/${recordId}/cancel`);
 }
 
 export async function deleteReviewRecord(recordId: ID) {

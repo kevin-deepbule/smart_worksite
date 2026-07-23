@@ -348,7 +348,7 @@ For MinIO integration, prefer adapter-level tests with a controlled test contain
 
 ## Uploaded File Parsing Design
 
-The `file` module should also provide parsing for already-uploaded files. This feature converts Word and PDF documents to Markdown, and converts images to textual paragraph descriptions.
+The `file` module should also provide parsing for already-uploaded files. This feature converts Word, PDF, UTF-8 text, and Excel documents to Markdown, and converts images to textual paragraph descriptions.
 
 This capability must be implemented as a file-module use case, not as logic inside knowledge, OCR, report, or review modules. Other modules should consume parsing results through the file module or through a future file facade.
 
@@ -359,13 +359,15 @@ Supported input files:
 ```text
 Word: .doc, .docx
 PDF: .pdf
+Text: .txt, .md using valid UTF-8
+Excel: .xls, .xlsx
 Images: .png, .jpg, .jpeg, .webp
 ```
 
 Supported output:
 
 ```text
-Word/PDF -> Markdown
+Word/PDF/Text/Excel -> Markdown
 Image -> Plain text paragraph description
 ```
 
@@ -436,12 +438,14 @@ Recommended asynchronous flow:
 6. Dispatch parsing through the `task` module, Redis queue, or a local async executor during the foundation phase.
 7. Worker reads the source object through `StorageAdapter`.
 8. Worker prepares model input based on file type.
-9. Worker calls `DocumentParseModelAdapter`.
-10. Worker normalizes output to Markdown or text.
+9. Worker validates the complete extracted document against `max-document-chars`; text longer than one model input window is split on line boundaries and each part is sent to `DocumentParseModelAdapter` in order.
+10. Worker combines all part results in source order and normalizes the complete output to Markdown or text. It must not silently truncate the tail of a document.
 11. Worker stores the parse result as a new MinIO object.
 12. Worker updates `file_parse_record` with result object name, content preview, stage, progress, and status.
 
 Do not block the HTTP request until QwenVL finishes parsing.
+Every parse transition to `RUNNING`, `SUCCESS`, or `FAILED` must check affected rows; a stale or missing record must never be reported as a successful parse.
+Parse-record detail reads by ID must include all non-deleted statuses, including `SUCCESS`, `FAILED`, and `CANCELED`; state restrictions belong on transition updates rather than detail queries.
 
 ### Model Strategy
 
@@ -498,6 +502,8 @@ Recommended strategy:
 - PDF: split or render pages as images when visual layout or scanned content matters; use page batches to avoid model context and payload limits.
 - DOCX: extract structural text where possible, and render embedded images/pages for QwenVL when visual content matters.
 - DOC: convert to DOCX or PDF through a controlled converter service if required; do not shell out to uncontrolled system commands in request threads.
+- TXT/MD: decode strictly as UTF-8 and fail visibly on malformed input.
+- XLS/XLSX: preserve Sheet names, source row numbers, and cell values in the prepared Markdown table input.
 
 For the foundation phase, prefer a simple adapter boundary and a small set of supported MIME types. Reject unsupported formats with `BusinessException`.
 

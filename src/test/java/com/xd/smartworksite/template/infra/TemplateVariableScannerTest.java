@@ -63,6 +63,59 @@ class TemplateVariableScannerTest {
     }
 
     @Test
+    void scansReviewDescriptionsAndSplitsOnlyOnFirstColon() throws Exception {
+        String content = """
+                {{var_project_name:检查项目名称是否一致}}
+                {{ var_emergency_plan : 审核要求：必须包含联系人、流程和物资 }}
+                {{var_project_name:检查项目名称是否一致}}
+                """;
+
+        assertThat(scanner.scanReviewDescriptions(
+                "review-template.md",
+                new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8))
+        )).containsExactly(
+                java.util.Map.entry("var_project_name", "检查项目名称是否一致"),
+                java.util.Map.entry("var_emergency_plan", "审核要求：必须包含联系人、流程和物资")
+        );
+    }
+
+    @Test
+    void scansReviewDescriptionSplitAcrossWordRuns() throws Exception {
+        byte[] documentBytes;
+        try (XWPFDocument document = new XWPFDocument();
+             ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+            XWPFParagraph paragraph = document.createParagraph();
+            paragraph.createRun().setText("{{ var_safety_");
+            paragraph.createRun().setText("measure : 检查安全措施");
+            paragraph.createRun().setText("是否完整 }}");
+            document.write(outputStream);
+            documentBytes = outputStream.toByteArray();
+        }
+
+        assertThat(scanner.scanReviewDescriptions(
+                "review-template.docx",
+                new ByteArrayInputStream(documentBytes)
+        )).containsExactly(java.util.Map.entry("var_safety_measure", "检查安全措施是否完整"));
+    }
+
+    @Test
+    void rejectsReviewVariableWithoutDescriptionOrWithConflictingDuplicate() {
+        assertThatThrownBy(() -> scanner.scanReviewDescriptions(
+                "review-template.md",
+                new ByteArrayInputStream("{{var_project_name:}}".getBytes(StandardCharsets.UTF_8))
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("描述不能为空");
+
+        assertThatThrownBy(() -> scanner.scanReviewDescriptions(
+                "review-template.md",
+                new ByteArrayInputStream(
+                        "{{var_project_name:规则一}}{{var_project_name:规则二}}".getBytes(StandardCharsets.UTF_8)
+                )
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("存在不同描述");
+    }
+
+    @Test
     void rejectsPdfTemplates() {
         assertThatThrownBy(() -> scanner.scan("template.pdf", new ByteArrayInputStream(new byte[0])))
                 .isInstanceOf(IllegalArgumentException.class)

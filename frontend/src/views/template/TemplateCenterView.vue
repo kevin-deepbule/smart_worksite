@@ -50,9 +50,9 @@ const reviewTypeOptions = ['SAFETY_REVIEW', 'QUALITY_REVIEW', 'CONTRACT_REVIEW']
 const templateTypeOptions = computed(() => form.templateCategory === 'REPORT' ? reportTypeOptions : reviewTypeOptions);
 const currentPreviewSheet = computed(() => previewSheets.value[activePreviewSheet.value]);
 
-const templateAccept = computed(() => form.templateCategory === 'REVIEW' ? '.doc,.docx,.pdf,.xls,.xlsx,.csv,.txt,.md' : '.docx,.txt,.md');
+const templateAccept = computed(() => form.templateCategory === 'REVIEW' ? '.doc,.docx,.xls,.xlsx,.csv,.txt,.md' : '.docx,.txt,.md');
 const templateTip = computed(() => form.templateCategory === 'REVIEW'
-  ? '审查模板按功能清单允许 Word、PDF、Excel/CSV；若后端无法解析会返回明确错误'
+  ? '审查模板必须包含 {{var_xxx:审核规则描述}}；支持 Word、Excel/CSV、TXT、MD，不支持 PDF'
   : '报告变量解析当前支持 DOCX、TXT、MD；其他格式需后端模板变量解析扩展');
 
 async function loadRows() {
@@ -105,7 +105,6 @@ async function openEdit(row: TemplateItem) {
 }
 
 async function openVariables(row: TemplateItem) {
-  if (row.templateCategory !== 'REPORT') return;
   const sequence = ++variableRequestSequence;
   variableTemplate.value = row;
   variableItems.value = [];
@@ -149,10 +148,11 @@ async function saveVariableDescriptions() {
         description: item.description.trim()
       }))
     );
-    ElMessage.success('模板变量描述已保存');
+    ElMessage.success(variableTemplate.value.templateCategory === 'REVIEW' ? '审核规则已保存' : '模板变量描述已保存');
     variableDialogVisible.value = false;
   } catch (err) {
-    ElMessage.error(err instanceof Error ? err.message : '模板变量描述保存失败，请检查后端接口。');
+    const target = variableTemplate.value.templateCategory === 'REVIEW' ? '审核规则' : '模板变量描述';
+    ElMessage.error(err instanceof Error ? err.message : `${target}保存失败，请检查后端接口。`);
   } finally {
     variableSaving.value = false;
   }
@@ -388,27 +388,27 @@ onMounted(async () => {
           <el-tag v-if="hasSuspiciousText(row.templateName)" type="warning" size="small" style="margin-left: 6px">疑似历史乱码数据</el-tag>
         </template>
         <template #status="{ row }"><StatusTag :status="row.status" :text="row.status === 'ACTIVE' ? 'ENABLED' : row.status" /></template>
-        <el-table-column label="操作" width="370"><template #default="{ row }"><el-button link type="primary" :loading="previewingId === row.templateId" @click="openPreview(row)">预览</el-button><el-button v-if="row.templateCategory === 'REPORT'" link type="primary" @click="openVariables(row)">模板变量</el-button><el-button link @click="openEdit(row)">编辑</el-button><el-button link type="primary" @click="setStatus(row, row.status === 'DISABLED')">{{ row.status === 'DISABLED' ? '启用' : '停用' }}</el-button><el-button link type="danger" @click="remove(row)">删除</el-button></template></el-table-column>
+        <el-table-column label="操作" width="370"><template #default="{ row }"><el-button link type="primary" :loading="previewingId === row.templateId" @click="openPreview(row)">预览</el-button><el-button link type="primary" @click="openVariables(row)">{{ row.templateCategory === 'REVIEW' ? '审核规则' : '模板变量' }}</el-button><el-button link @click="openEdit(row)">编辑</el-button><el-button link type="primary" @click="setStatus(row, row.status === 'DISABLED')">{{ row.status === 'DISABLED' ? '启用' : '停用' }}</el-button><el-button link type="danger" @click="remove(row)">删除</el-button></template></el-table-column>
       </AppTable>
     </el-card>
-    <el-dialog v-model="variableDialogVisible" :title="`模板变量：${variableTemplate?.templateName || ''}`" width="760px" top="8vh" destroy-on-close @closed="resetVariableDialog">
+    <el-dialog v-model="variableDialogVisible" :title="`${variableTemplate?.templateCategory === 'REVIEW' ? '审核规则' : '模板变量'}：${variableTemplate?.templateName || ''}`" width="760px" top="8vh" destroy-on-close @closed="resetVariableDialog">
       <div v-loading="variableLoading" class="variable-dialog-body">
         <el-alert v-if="variableError" :title="variableError" type="error" show-icon :closable="false" />
         <el-table v-else-if="variableItems.length" :data="variableItems" border stripe max-height="58vh">
           <el-table-column label="变量名" width="260">
             <template #default="{ row }"><el-input :model-value="row.variableName" disabled /></template>
           </el-table-column>
-          <el-table-column label="变量描述">
+          <el-table-column :label="variableTemplate?.templateCategory === 'REVIEW' ? '审核规则' : '变量描述'">
             <template #default="{ row }">
-              <el-input v-model="row.description" type="textarea" :rows="2" maxlength="2000" show-word-limit :disabled="!canManageTemplate" placeholder="请输入该变量的业务含义和生成要求" />
+              <el-input v-model="row.description" type="textarea" :rows="2" maxlength="2000" show-word-limit :disabled="!canManageTemplate" :placeholder="variableTemplate?.templateCategory === 'REVIEW' ? '请输入该变量对应的审核规则' : '请输入该变量的业务含义和生成要求'" />
             </template>
           </el-table-column>
         </el-table>
-        <EmptyState v-else-if="!variableLoading && !variableError" description="该报告模板没有可配置的变量。" />
+        <EmptyState v-else-if="!variableLoading && !variableError" :description="variableTemplate?.templateCategory === 'REVIEW' ? '该审查模板没有解析到审核规则。' : '该报告模板没有可配置的变量。'" />
       </div>
       <template #footer>
         <el-button @click="variableDialogVisible = false">关闭</el-button>
-        <el-button v-if="canManageTemplate" type="primary" :loading="variableSaving" :disabled="variableLoading || !!variableError || !variableItems.length" @click="saveVariableDescriptions">保存变量描述</el-button>
+        <el-button v-if="canManageTemplate" type="primary" :loading="variableSaving" :disabled="variableLoading || !!variableError || !variableItems.length" @click="saveVariableDescriptions">{{ variableTemplate?.templateCategory === 'REVIEW' ? '保存审核规则' : '保存变量描述' }}</el-button>
       </template>
     </el-dialog>
     <el-dialog v-model="previewVisible" :title="previewTitle" width="86vw" top="5vh" destroy-on-close @closed="onPreviewClosed">

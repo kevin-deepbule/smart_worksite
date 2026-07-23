@@ -155,6 +155,48 @@
           and deleted = 0
     </update>
 
+    <update id="queuePending">
+        update generate_task
+        set status = 'QUEUED',
+            current_stage = #{currentStage},
+            error_message = null,
+            updated_by = #{updatedBy}
+        where id = #{taskId}
+          and status = 'PENDING'
+          and cancel_requested = 0
+          and deleted = 0
+    </update>
+
+    <update id="failWaiting">
+        update generate_task
+        set status = 'FAILED',
+            current_stage = #{currentStage},
+            error_message = #{errorMessage},
+            finished_at = current_timestamp,
+            updated_by = #{updatedBy}
+        where id = #{taskId}
+          and status in ('PENDING', 'QUEUED')
+          and deleted = 0
+    </update>
+
+    <update id="resetFailedToPending">
+        update generate_task
+        set status = 'PENDING',
+            current_stage = #{currentStage},
+            retry_count = retry_count + 1,
+            error_message = null,
+            cancel_requested = 0,
+            worker_id = null,
+            lease_until = null,
+            last_heartbeat_at = null,
+            finished_at = null,
+            updated_by = #{updatedBy}
+        where id = #{taskId}
+          and status = 'FAILED'
+          and retry_count &lt; max_retry_count
+          and deleted = 0
+    </update>
+
     <update id="cancelWaiting">
         update generate_task
         set status = 'CANCELED',
@@ -195,6 +237,17 @@
         set lease_until = timestampadd(second, #{leaseSeconds}, current_timestamp),
             last_heartbeat_at = current_timestamp,
             updated_by = 1
+        where id = #{taskId}
+          and status = 'RUNNING'
+          and worker_id = #{workerId}
+          and cancel_requested = 0
+          and deleted = 0
+    </update>
+
+    <update id="updateRunningStage">
+        update generate_task
+        set current_stage = #{currentStage},
+            last_heartbeat_at = current_timestamp
         where id = #{taskId}
           and status = 'RUNNING'
           and worker_id = #{workerId}

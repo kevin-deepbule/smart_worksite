@@ -80,7 +80,7 @@ curl --noproxy '*' -X POST "http://127.0.0.1:8080/api/templates" \
   -F "file=@/tmp/template.docx"
 ```
 
-当 `templateCategory=REPORT` 时，上传应用服务会在写入 MinIO 前扫描模板中的 `{{ var_xx_xx }}`，并在文件及模板记录生成 ID 后按扫描顺序写入 `template_variable_description`；初始 `description` 为空字符串。解析或变量写入失败时整个上传失败。`REVIEW` 模板不执行该自动解析流程。
+当 `templateCategory=REPORT` 时，上传应用服务会在写入 MinIO 前扫描模板中的 `{{ var_xx_xx }}`，并在文件及模板记录生成 ID 后按扫描顺序写入 `template_variable_description`；初始 `description` 为空字符串。当 `templateCategory=REVIEW` 时，必须解析至少一个 `{{ var_xx_xx : 审核规则描述 }}` 并持久化非空描述。解析或变量写入失败时整个上传失败。
 
 ## 2. 查询模板
 
@@ -133,7 +133,7 @@ Content-Type: multipart/form-data
 - 变量按第一次出现顺序去重，写入现有 `template_variable_description` 表，初始描述为 `""`。
 - 合法模板没有变量时允许上传成功，不写入变量记录。
 - 变量插入必须检查影响行数和生成 ID；写入失败时数据库事务回滚并清理本次上传对象。
-- 审查模板上传不触发变量自动解析。
+- 审查模板使用独立的审核规则语法，详见第 5 节。
 
 查询报告模板：
 
@@ -179,6 +179,24 @@ POST /api/review/templates/{templateId}/disable
 DELETE /api/review/templates/{templateId}
 ```
 
+审查模板上传自动解析规则：
+
+- 变量格式为 `{{ var_xx_xx : 审核规则描述 }}`，第一个英文冒号分隔变量名和描述。
+- 描述内允许继续包含中英文冒号，例如 `{{var_emergency_plan:审核要求：必须包含联系人和处置流程}}`。
+- 至少需要一个审核规则，变量名和描述均不能为空，描述最长 2000 字符。
+- 同名变量描述一致时按第一次出现顺序去重；同名不同描述时上传失败。
+- 解析在对象存储写入前完成，解析失败时不创建 MinIO 对象、文件记录或模板记录。
+- 解析结果复用 `template_variable_description` 表保存。
+- 审查规则上传后可通过 `PUT /api/templates/{templateId}/variables/descriptions` 修改描述；变量名仍以模板文件解析结果为准，不能增删或改名。
+- 执行合规审查时，Java 将解析后的 `variableName + description` 规则列表传给 Python Agent；规则缺失或不完整时审查失败。
+
+示例：
+
+```text
+{{var_project_name:检查封面、审批页和正文中的项目名称是否一致}}
+{{var_emergency_plan:审核要求：必须包含联系人、处置流程和应急物资}}
+```
+
 ## 6. 模板预览与变量描述接口
 
 以下接口已经实现。所有测试示例假设：
@@ -198,7 +216,7 @@ export TEMPLATE_ID="<已上传模板 ID>"
 页脚项目：{{ var_project_name }}
 ```
 
-变量只允许 `{{ var_xx_xx }}` 格式，变量名匹配：
+报告变量使用 `{{ var_xx_xx }}`，审查规则变量使用 `{{ var_xx_xx : 审核规则描述 }}`。两类变量名都匹配：
 
 ```regex
 \{\{\s*(var_[a-z0-9_]+)\s*\}\}
@@ -289,6 +307,7 @@ curl --noproxy '*' --fail-with-body \
 
 - 从文件开头扫描到结尾，按第一次出现顺序返回。
 - 同名变量重复出现只返回一次。
+- 审查模板同名变量只有在描述一致时才允许去重，同名不同描述直接报错。
 - DOCX 按页眉、正文、页脚处理；段落和表格单元格必须先合并 Runs 再匹配。
 - XLS/XLSX 按工作表、行、单元格顺序处理。
 - TXT、MD、CSV 按文本顺序处理。
@@ -353,6 +372,8 @@ PUT /api/templates/{templateId}/variables/descriptions
 Content-Type: application/json
 Authorization: Bearer <accessToken>
 ```
+
+该接口同时允许修改 `REPORT` 变量描述和 `REVIEW` 审核规则描述。保存前都会重新扫描模板文件，提交内容必须覆盖文件中的全部唯一变量；变量名不能增删或改名。
 
 请求体：
 
@@ -491,7 +512,9 @@ curl --noproxy '*' --fail-with-body \
 | 场景 | 预期结果 |
 | --- | --- |
 | 上传含变量的报告模板 | 上传成功，并按扫描顺序写入空描述变量记录 |
-| 上传审查模板 | 不执行变量自动解析，不写入空描述变量记录 |
+| 上传合法审查模板 | 按顺序解析 `{{var_xxx:审核规则描述}}` 并写入非空描述 |
+| 审查模板没有规则或描述为空 | 上传前校验失败，不创建存储对象和数据库记录 |
+| 审查模板同名变量不同描述 | 上传失败 |
 | 报告模板解析失败 | MinIO、文件记录和模板记录均不创建 |
 | 自动变量写入失败 | 上传失败、数据库事务回滚并清理 MinIO 对象 |
 | DOCX 正常预览 | 返回非空文件流和正确响应头 |
@@ -512,7 +535,8 @@ curl --noproxy '*' --fail-with-body \
 ## 写入规则
 
 - 模板上传必须要求非空原始文件名、显式 `templateName` 和 `templateType`。
-- 报告模板上传必须在对象存储写入前自动解析变量，并在模板、文件 ID 生成后持久化空描述变量；审查模板不执行该流程。
+- 报告模板上传必须在对象存储写入前自动解析变量，并在模板、文件 ID 生成后持久化空描述变量。
+- 审查模板上传必须在对象存储写入前解析至少一个带非空描述的审核规则，并在模板、文件 ID 生成后持久化变量名和描述。
 - 存储上传失败必须返回可见错误，不允许创建兜底模板元数据。
 - 创建后必须读回持久化记录再返回。
 - 更新、启用、停用、删除必须检查影响行数。

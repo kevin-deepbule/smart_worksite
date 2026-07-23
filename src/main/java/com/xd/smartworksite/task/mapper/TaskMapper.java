@@ -31,6 +31,19 @@ public interface TaskMapper {
                      @Param("currentStage") String currentStage,
                      @Param("updatedBy") Long updatedBy);
 
+    int queuePending(@Param("taskId") Long taskId,
+                     @Param("currentStage") String currentStage,
+                     @Param("updatedBy") Long updatedBy);
+
+    int failWaiting(@Param("taskId") Long taskId,
+                    @Param("currentStage") String currentStage,
+                    @Param("errorMessage") String errorMessage,
+                    @Param("updatedBy") Long updatedBy);
+
+    int resetFailedToPending(@Param("taskId") Long taskId,
+                             @Param("currentStage") String currentStage,
+                             @Param("updatedBy") Long updatedBy);
+
     int cancelWaiting(@Param("taskId") Long taskId,
                       @Param("updatedBy") Long updatedBy);
 
@@ -45,6 +58,10 @@ public interface TaskMapper {
     int heartbeat(@Param("taskId") Long taskId,
                   @Param("workerId") String workerId,
                   @Param("leaseSeconds") long leaseSeconds);
+
+    int updateRunningStage(@Param("taskId") Long taskId,
+                           @Param("workerId") String workerId,
+                           @Param("currentStage") String currentStage);
 
     int completeSuccess(@Param("taskId") Long taskId,
                         @Param("workerId") String workerId,

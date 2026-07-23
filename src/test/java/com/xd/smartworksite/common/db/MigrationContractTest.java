@@ -121,6 +121,21 @@ class MigrationContractTest {
     }
 
     @Test
+    void longDocumentReviewMigrationUsesThreeTablePersistence() throws IOException {
+        String migration = Files.readString(
+                MIGRATION_DIR.resolve("V19__add_long_document_review_results.sql"),
+                StandardCharsets.UTF_8
+        );
+
+        assertThat(migration).contains("CREATE TABLE review_document_chunk");
+        assertThat(migration).contains("CREATE TABLE review_rule_result");
+        assertThat(migration).contains("evidence_json JSON NULL");
+        assertThat(migration).contains("UNIQUE KEY uk_review_chunk (review_record_id, chunk_no, deleted)");
+        assertThat(migration).contains("UNIQUE KEY uk_review_rule (review_record_id, rule_code, deleted)");
+        assertThat(migration).doesNotContain("CREATE TABLE review_rule_chunk_result");
+    }
+
+    @Test
     void fileDownloadContractUsesAccessUrlEndpoint() throws IOException {
         String readme = Files.readString(README, StandardCharsets.UTF_8);
         String frontendFileApi = Files.readString(FRONTEND_FILE_API, StandardCharsets.UTF_8);

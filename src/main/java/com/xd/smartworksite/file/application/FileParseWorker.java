@@ -21,6 +21,8 @@ import org.springframework.stereotype.Component;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -64,7 +66,7 @@ public class FileParseWorker {
             PreparedDocument preparedDocument = documentPreparationService.prepare(fileObject);
 
             update(recordId, FileParseStage.CALLING_MODEL, 55);
-            ParsedDocument parsedDocument = documentParseModelAdapter.parse(toModelRequest(record, fileObject, preparedDocument));
+            ParsedDocument parsedDocument = parsePreparedDocument(record, fileObject, preparedDocument);
 
             update(recordId, FileParseStage.NORMALIZING_RESULT, 80);
             String resultContent = parsedDocument.getContent().trim();
@@ -85,22 +87,34 @@ public class FileParseWorker {
             success.setResultObjectName(resultObjectName);
             success.setContentPreview(toPreview(resultContent));
             success.setMetadata(buildMetadata(parsedDocument, preparedDocument));
-            fileParseRecordRepository.updateSucceeded(success);
+            requireUpdated(fileParseRecordRepository.updateSucceeded(success),
+                    "file parse success state changed");
         } catch (Exception ex) {
             log.warn("file parse failed, recordId={}", recordId, ex);
-            fileParseRecordRepository.updateFailed(
+            int failed = fileParseRecordRepository.updateFailed(
                     recordId,
                     FileParseStage.FAILED.name(),
                     normalizeErrorMessage(ex)
             );
+            if (failed == 0) {
+                throw new IllegalStateException(
+                        "file parse failure state cannot be persisted: " + normalizeErrorMessage(ex), ex);
+            }
         }
     }
 
     private void update(Long recordId, FileParseStage stage, int progress) {
-        fileParseRecordRepository.updateRunning(recordId, stage.name(), progress);
+        requireUpdated(fileParseRecordRepository.updateRunning(recordId, stage.name(), progress),
+                "file parse stage state changed");
     }
 
     private DocumentParseRequest toModelRequest(FileParseRecord record, FileObject fileObject, PreparedDocument preparedDocument) {
+        return toModelRequest(record, fileObject, preparedDocument, preparedDocument.getTextContent(), 1, 1);
+    }
+
+    private DocumentParseRequest toModelRequest(FileParseRecord record, FileObject fileObject,
+                                                PreparedDocument preparedDocument, String textContent,
+                                                int partIndex, int partCount) {
         DocumentParseRequest request = new DocumentParseRequest();
         request.setProjectId(record.getProjectId());
         request.setFileId(record.getFileId());
@@ -110,9 +124,73 @@ public class FileParseWorker {
         request.setInputFormat(preparedDocument.getInputFormat());
         request.setTargetFormat(record.getResultFormat());
         request.setLanguage("zh-CN");
-        request.setTextContent(preparedDocument.getTextContent());
+        request.setTextContent(textContent);
         request.setImageDataUrl(preparedDocument.getImageDataUrl());
+        request.setPartIndex(partIndex);
+        request.setPartCount(partCount);
         return request;
+    }
+
+    private ParsedDocument parsePreparedDocument(FileParseRecord record, FileObject fileObject,
+                                                 PreparedDocument preparedDocument) throws Exception {
+        String text = preparedDocument.getTextContent();
+        if (text == null) {
+            return documentParseModelAdapter.parse(toModelRequest(record, fileObject, preparedDocument));
+        }
+        List<String> parts = splitText(text, fileProperties.getParse().getMaxInputChars());
+        if (parts.size() == 1) {
+            return documentParseModelAdapter.parse(toModelRequest(record, fileObject, preparedDocument));
+        }
+
+        StringBuilder markdown = new StringBuilder();
+        List<Object> modelMetadata = new ArrayList<>();
+        String resultFormat = null;
+        String modelName = null;
+        for (int index = 0; index < parts.size(); index++) {
+            ParsedDocument part = documentParseModelAdapter.parse(toModelRequest(
+                    record, fileObject, preparedDocument, parts.get(index), index + 1, parts.size()));
+            if (resultFormat == null) {
+                resultFormat = part.getResultFormat();
+                modelName = part.getModelName();
+            } else if (!resultFormat.equals(part.getResultFormat())) {
+                throw new IllegalStateException("document parse batch result format mismatch");
+            }
+            if (markdown.length() > 0) {
+                markdown.append("\n\n");
+            }
+            markdown.append("<!-- source-part: ")
+                    .append(index + 1).append('/').append(parts.size()).append(" -->\n")
+                    .append(part.getContent().trim());
+            if (part.getMetadata() != null && !part.getMetadata().isBlank()) {
+                modelMetadata.add(objectMapper.readTree(part.getMetadata()));
+            }
+        }
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("batchCount", parts.size());
+        metadata.put("batches", modelMetadata);
+        return new ParsedDocument(markdown.toString(), resultFormat, modelName,
+                objectMapper.writeValueAsString(metadata));
+    }
+
+    private List<String> splitText(String text, int configuredMaxChars) {
+        int maxChars = Math.max(1000, configuredMaxChars);
+        if (text.length() <= maxChars) {
+            return List.of(text);
+        }
+        List<String> parts = new ArrayList<>();
+        int start = 0;
+        while (start < text.length()) {
+            int end = Math.min(text.length(), start + maxChars);
+            if (end < text.length()) {
+                int newline = text.lastIndexOf('\n', end);
+                if (newline > start) {
+                    end = newline + 1;
+                }
+            }
+            parts.add(text.substring(start, end));
+            start = end;
+        }
+        return parts;
     }
 
     private String buildResultObjectName(FileParseRecord record, String resultFormat) {
@@ -155,5 +233,11 @@ public class FileParseWorker {
             return ex.getClass().getSimpleName();
         }
         return message.length() > 1000 ? message.substring(0, 1000) : message;
+    }
+
+    private void requireUpdated(int updated, String message) {
+        if (updated == 0) {
+            throw new IllegalStateException(message);
+        }
     }
 }

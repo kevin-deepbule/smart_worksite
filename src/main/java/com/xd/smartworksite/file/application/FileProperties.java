@@ -63,6 +63,7 @@ public class FileProperties {
         private int maxPages = 100;
         private int resultPreviewLength = 2000;
         private int maxInputChars = 120000;
+        private int maxDocumentChars = 2000000;
         private QwenVl qwenVl = new QwenVl();
 
         public boolean isEnabled() {
@@ -95,6 +96,14 @@ public class FileProperties {
 
         public void setMaxInputChars(int maxInputChars) {
             this.maxInputChars = maxInputChars;
+        }
+
+        public int getMaxDocumentChars() {
+            return maxDocumentChars;
+        }
+
+        public void setMaxDocumentChars(int maxDocumentChars) {
+            this.maxDocumentChars = maxDocumentChars;
         }
 
         public QwenVl getQwenVl() {

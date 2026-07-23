@@ -238,6 +238,10 @@ class TaskApplicationServiceTest {
             return 1;
         }
 
+        @Override public int queuePending(Long taskId, String currentStage, Long updatedBy) { return 0; }
+        @Override public int failWaiting(Long taskId, String currentStage, String errorMessage, Long updatedBy) { return 0; }
+        @Override public int resetFailedToPending(Long taskId, String currentStage, Long updatedBy) { return 0; }
+
         @Override
         public int cancelWaiting(Long taskId, Long updatedBy) {
             GenerateTask task = findById(taskId).orElseThrow();
@@ -269,6 +273,8 @@ class TaskApplicationServiceTest {
         public int heartbeat(Long taskId, String workerId, long leaseSeconds) {
             return 0;
         }
+
+        @Override public int updateRunningStage(Long taskId, String workerId, String currentStage) { return 0; }
 
         @Override
         public int completeSuccess(Long taskId, String workerId, String currentStage) {

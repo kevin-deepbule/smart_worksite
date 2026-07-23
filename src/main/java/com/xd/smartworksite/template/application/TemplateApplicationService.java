@@ -28,8 +28,10 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -75,9 +77,7 @@ public class TemplateApplicationService {
 
         String normalizedVersion = normalizeVersion(versionNo);
         String originalFilename = normalizeFileName(file.getOriginalFilename());
-        List<String> reportVariables = category == TemplateCategory.REPORT
-                ? scanReportTemplateVariables(originalFilename, file)
-                : List.of();
+        Map<String, String> parsedVariables = scanTemplateVariables(category, originalFilename, file);
         String objectName = buildObjectName(projectId, category.name(), originalFilename);
         StorageObject storageObject;
         try {
@@ -119,9 +119,7 @@ public class TemplateApplicationService {
                 throw new BusinessException(ErrorCode.SYSTEM_ERROR, "template id was not generated");
             }
             requireUpdated(templateRepository.updateFileBizId(fileObject.getId(), template.getId()), "template file business id update failed");
-            if (category == TemplateCategory.REPORT) {
-                persistParsedReportVariables(template, fileObject.getId(), reportVariables);
-            }
+            persistParsedVariables(template, fileObject.getId(), parsedVariables);
 
             return toResponse(templateRepository.findById(template.getId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.SYSTEM_ERROR, "template record is not readable")));
@@ -131,30 +129,54 @@ public class TemplateApplicationService {
         }
     }
 
-    private List<String> scanReportTemplateVariables(String fileName, MultipartFile file) {
+    private Map<String, String> scanTemplateVariables(
+            TemplateCategory category,
+            String fileName,
+            MultipartFile file) {
         try (var inputStream = file.getInputStream()) {
-            return variableScanner.scan(fileName, inputStream);
+            if (category == TemplateCategory.REVIEW) {
+                Map<String, String> descriptions = variableScanner.scanReviewDescriptions(fileName, inputStream);
+                if (descriptions.isEmpty()) {
+                    throw new BusinessException(
+                            ErrorCode.PARAM_ERROR,
+                            "审查模板至少需要一个 {{var_xxx:审核规则描述}} 变量"
+                    );
+                }
+                return descriptions;
+            }
+            Map<String, String> descriptions = new LinkedHashMap<>();
+            for (String variableName : variableScanner.scan(fileName, inputStream)) {
+                descriptions.put(variableName, "");
+            }
+            return descriptions;
         } catch (IllegalArgumentException ex) {
             throw new BusinessException(ErrorCode.PARAM_ERROR, ex.getMessage());
+        } catch (BusinessException ex) {
+            throw ex;
         } catch (IOException | RuntimeException ex) {
-            throw new BusinessException(ErrorCode.PARAM_ERROR, "报告模板文件损坏或无法解析");
+            throw new BusinessException(
+                    ErrorCode.PARAM_ERROR,
+                    category == TemplateCategory.REVIEW
+                            ? "审查模板文件损坏或无法解析"
+                            : "报告模板文件损坏或无法解析"
+            );
         }
     }
 
-    private void persistParsedReportVariables(Template template, Long fileId, List<String> variableNames) {
+    private void persistParsedVariables(Template template, Long fileId, Map<String, String> variables) {
         Long operatorId = SecurityUtils.getCurrentUserId();
-        for (String variableName : variableNames) {
+        for (Map.Entry<String, String> variable : variables.entrySet()) {
             TemplateVariableDescription record = new TemplateVariableDescription();
             record.setProjectId(template.getProjectId());
             record.setTemplateId(template.getId());
             record.setFileId(fileId);
-            record.setVariableName(variableName);
-            record.setDescription("");
+            record.setVariableName(variable.getKey());
+            record.setDescription(variable.getValue());
             record.setCreatedBy(operatorId);
             record.setUpdatedBy(operatorId);
             int inserted = variableDescriptionRepository.insert(record);
             if (inserted <= 0 || record.getId() == null) {
-                throw new BusinessException(ErrorCode.CONFLICT, "报告模板变量写入失败");
+                throw new BusinessException(ErrorCode.CONFLICT, "模板变量写入失败");
             }
         }
     }

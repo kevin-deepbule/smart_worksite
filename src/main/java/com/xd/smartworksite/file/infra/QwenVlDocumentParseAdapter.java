@@ -113,6 +113,7 @@ public class QwenVlDocumentParseAdapter implements DocumentParseModelAdapter {
         String prompt = "文件名：" + request.getFileName()
                 + "\n输入格式：" + request.getInputFormat()
                 + "\n目标格式：" + request.getTargetFormat()
+                + "\n当前分段：" + request.getPartIndex() + "/" + request.getPartCount()
                 + "\n请将以下文档内容整理为 Markdown：\n\n"
                 + request.getTextContent();
         content.add(Map.of("type", "text", "text", prompt));

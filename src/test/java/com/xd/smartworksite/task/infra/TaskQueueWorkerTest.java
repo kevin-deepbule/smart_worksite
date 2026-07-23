@@ -5,6 +5,7 @@ import com.xd.smartworksite.common.redis.RedisQueueService;
 import com.xd.smartworksite.knowledge.application.KnowledgeBaseApplicationService;
 import com.xd.smartworksite.policy.application.PolicyApplicationService;
 import com.xd.smartworksite.report.application.ReportGenerationApplicationService;
+import com.xd.smartworksite.review.application.ReviewApplicationService;
 import com.xd.smartworksite.task.application.TaskWorkerApplicationService;
 import com.xd.smartworksite.task.domain.GenerateTask;
 import com.xd.smartworksite.task.dto.TaskClaimResult;
@@ -41,6 +42,7 @@ class TaskQueueWorkerTest {
             context.registerBean(ReportGenerationApplicationService.class, () -> mock(ReportGenerationApplicationService.class));
             context.registerBean(KnowledgeBaseApplicationService.class, () -> mock(KnowledgeBaseApplicationService.class));
             context.registerBean(PolicyApplicationService.class, () -> policyApplicationService);
+            context.registerBean(ReviewApplicationService.class, () -> mock(ReviewApplicationService.class));
             context.registerBean(ObjectMapper.class, () -> new ObjectMapper());
             context.registerBean(TaskQueueWorker.class);
 
@@ -87,6 +89,32 @@ class TaskQueueWorkerTest {
 
         verify(knowledgeBaseApplicationService).executeIndexTask(77L, 1L);
         verify(reportGenerationApplicationService, never()).executeReportTask(any(), any());
+        verify(workerApplicationService).completeSuccess(1L, "worker-test", "FINISH");
+    }
+
+    @Test
+    void reviewMessageExecutesReviewWithTheOwnedWorkerLease() throws Exception {
+        RecordingRedisQueueService redisQueueService = new RecordingRedisQueueService(queueMessage(10L, 1L));
+        TaskWorkerApplicationService workerApplicationService = mock(TaskWorkerApplicationService.class);
+        ReportGenerationApplicationService reportGenerationApplicationService =
+                mock(ReportGenerationApplicationService.class);
+        KnowledgeBaseApplicationService knowledgeBaseApplicationService =
+                mock(KnowledgeBaseApplicationService.class);
+        ReviewApplicationService reviewApplicationService = mock(ReviewApplicationService.class);
+        TaskWorkerProperties properties = new TaskWorkerProperties();
+        properties.setWorkerId("worker-test");
+        properties.setLeaseSeconds(60);
+        properties.setPopTimeoutMs(1);
+        TaskQueueWorker worker = new TaskQueueWorker(
+                redisQueueService, workerApplicationService, reportGenerationApplicationService,
+                knowledgeBaseApplicationService, null, reviewApplicationService, properties, objectMapper);
+        GenerateTask task = task(1L, 88L, "REVIEW_EXECUTION");
+        when(workerApplicationService.claimQueuedTask(1L, "worker-test", 60))
+                .thenReturn(TaskClaimResult.claimed(task));
+
+        worker.pollOnce();
+
+        verify(reviewApplicationService).executeReviewTask(88L, 1L, "worker-test", 60);
         verify(workerApplicationService).completeSuccess(1L, "worker-test", "FINISH");
     }
 

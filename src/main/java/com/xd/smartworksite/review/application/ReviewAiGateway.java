@@ -5,4 +5,6 @@ import com.xd.smartworksite.ai.dto.AgentInvokeResponse;
 
 public interface ReviewAiGateway {
     AgentInvokeResponse invokeAgent(AgentInvokeRequest request);
+
+    AgentInvokeResponse invokeAgentForSystem(AgentInvokeRequest request);
 }

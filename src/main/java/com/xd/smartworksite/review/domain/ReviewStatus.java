@@ -5,5 +5,6 @@ public enum ReviewStatus {
     PROCESSING,
     COMPLETED,
     FAILED,
+    CANCELED,
     ARCHIVED
 }

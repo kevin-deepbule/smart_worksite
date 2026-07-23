@@ -207,12 +207,18 @@ curl --noproxy '*' -X DELETE http://127.0.0.1:8080/api/files/1
 图片 -> 中文段落描述，结果格式 TEXT
 PDF -> Markdown，结果格式 MARKDOWN
 Word -> Markdown，结果格式 MARKDOWN
+TXT -> Markdown，结果格式 MARKDOWN
+Excel -> Markdown，结果格式 MARKDOWN
 ```
 
 当前实现说明：
 
 - 图片直接发送给 QwenVL 解析。
-- Word/PDF 先本地提取文本，再交给 QwenVL 整理成 Markdown。
+- Word/PDF 先提取文本，再交给解析模型整理成 Markdown。
+- TXT 必须是合法 UTF-8；Excel 解析保留 Sheet 名称、源行号和单元格内容，再由解析模型规范为 Markdown。
+- `FILE_PARSE_MAX_INPUT_CHARS` 是单次模型输入窗口；超过该窗口的文本按行边界分批解析并按原顺序合并，不再静默截断。
+- `FILE_PARSE_MAX_DOCUMENT_CHARS` 是完整提取文本上限，默认 `2000000`；超过上限会明确失败。
+- PDF 提取结果带页码锚点，供后续审核证据定位使用。
 - 扫描版 PDF 暂不做逐页渲染 OCR，如果 PDF 没有可提取文本，解析会失败。
 - 解析异步执行，发起接口会立即返回解析记录。
 - 完整解析结果存 MinIO，预览和状态存 `file_parse_record`。
@@ -230,7 +236,7 @@ Content-Type: application/json
 | --- | --- | --- | --- |
 | projectId | Long | 是 | 项目 ID |
 | force | Boolean | 否 | 是否强制重新解析，默认 false |
-| targetFormat | String | 否 | 图片用 TEXT，Word/PDF 用 MARKDOWN；不传时自动判断 |
+| targetFormat | String | 否 | 图片用 TEXT，Word/PDF/TXT/Excel 用 MARKDOWN；不传时自动判断 |
 | language | String | 否 | 默认 zh-CN |
 
 图片解析示例：
@@ -246,7 +252,7 @@ curl --noproxy '*' -X POST http://127.0.0.1:8080/api/files/1/parse \
   }'
 ```
 
-PDF/Word 解析示例：
+文档解析示例：
 
 ```bash
 curl --noproxy '*' -X POST http://127.0.0.1:8080/api/files/1/parse \
@@ -308,6 +314,8 @@ FAILED
 ```text
 GET /api/file-parse-records/{recordId}
 ```
+
+该接口按 ID 返回任意未删除状态的解析记录，包括 `PENDING`、`RUNNING`、`SUCCESS`、`FAILED` 和 `CANCELED`。状态限制仅用于状态流转更新，不得将已完成记录过滤为不存在。
 
 示例：
 

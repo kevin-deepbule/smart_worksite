@@ -36,6 +36,11 @@ public class FileParseApplicationService {
             "application/msword",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     );
+    private static final Set<String> EXCEL_TYPES = Set.of(
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    private static final Set<String> TEXT_TYPES = Set.of("text/plain");
 
     private final FileObjectRepository fileObjectRepository;
     private final FileParseRecordRepository fileParseRecordRepository;
@@ -76,7 +81,7 @@ public class FileParseApplicationService {
                             fileObject.getFileHash(),
                             resultFormat.name())
                     .orElse(null);
-            if (reusable != null) {
+            if (reusable != null && !wasInputTruncated(reusable)) {
                 return toResponse(reusable);
             }
         }
@@ -119,6 +124,7 @@ public class FileParseApplicationService {
     }
 
     public FileParseRecordResponse getLatestFileParseRecordForSystem(Long fileId, Long projectId) {
+        projectAccessApplicationService.requireProjectWritableForSystem(projectId);
         return fileParseRecordRepository.findLatestByFileId(projectId, fileId)
                 .map(this::toResponse)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "file parse record not found"));
@@ -130,6 +136,12 @@ public class FileParseApplicationService {
         return toResponse(record);
     }
 
+    public FileParseRecordResponse getParseRecordForSystem(Long recordId) {
+        FileParseRecord record = findRecord(recordId);
+        projectAccessApplicationService.requireProjectWritableForSystem(record.getProjectId());
+        return toResponse(record);
+    }
+
     public FileParseContentResponse getParseContent(Long recordId) {
         FileParseRecord record = findRecord(recordId);
         projectAccessApplicationService.requireProjectAccess(record.getProjectId());
@@ -138,6 +150,7 @@ public class FileParseApplicationService {
 
     public FileParseContentResponse getParseContentForSystem(Long recordId) {
         FileParseRecord record = findRecord(recordId);
+        projectAccessApplicationService.requireProjectWritableForSystem(record.getProjectId());
         return readParseContent(record);
     }
 
@@ -224,6 +237,12 @@ public class FileParseApplicationService {
         if (isWord(fileObject)) {
             return "WORD_TO_MARKDOWN";
         }
+        if (isExcel(fileObject)) {
+            return "EXCEL_TO_MARKDOWN";
+        }
+        if (isText(fileObject)) {
+            return "TEXT_TO_MARKDOWN";
+        }
         throw new BusinessException(ErrorCode.PARAM_ERROR, "unsupported file parse content type");
     }
 
@@ -240,6 +259,16 @@ public class FileParseApplicationService {
     private boolean isWord(FileObject fileObject) {
         return WORD_TYPES.contains(normalizeContentType(fileObject.getContentType()))
                 || Set.of("doc", "docx").contains(normalizeExt(fileObject.getFileExt()));
+    }
+
+    private boolean isExcel(FileObject fileObject) {
+        return EXCEL_TYPES.contains(normalizeContentType(fileObject.getContentType()))
+                || Set.of("xls", "xlsx").contains(normalizeExt(fileObject.getFileExt()));
+    }
+
+    private boolean isText(FileObject fileObject) {
+        return TEXT_TYPES.contains(normalizeContentType(fileObject.getContentType()))
+                || Set.of("txt", "md").contains(normalizeExt(fileObject.getFileExt()));
     }
 
     private String normalizeContentType(String contentType) {
@@ -264,6 +293,17 @@ public class FileParseApplicationService {
             return objectMapper.writeValueAsString(metadata);
         } catch (Exception ex) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "file parse metadata serialization failed");
+        }
+    }
+
+    private boolean wasInputTruncated(FileParseRecord record) {
+        if (record.getMetadata() == null || record.getMetadata().isBlank()) {
+            return false;
+        }
+        try {
+            return objectMapper.readTree(record.getMetadata()).path("inputTruncated").asBoolean(false);
+        } catch (Exception ex) {
+            return false;
         }
     }
 

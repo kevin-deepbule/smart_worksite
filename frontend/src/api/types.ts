@@ -205,7 +205,7 @@ export interface ReviewTemplate {
 export interface ReviewIssue {
   issueId: string;
   severity: 'LOW' | 'MEDIUM' | 'HIGH';
-  location: string;
+  location: string | Record<string, unknown>;
   ruleName: string;
   description: string;
   suggestion: string;
@@ -217,14 +217,39 @@ export interface ReviewRecord {
   recordId: ID;
   projectId: ID;
   taskId?: ID;
+  parseRecordId?: ID;
   fileId?: ID;
   templateId: ID;
   status: Status;
+  currentStage?: string;
+  progress?: number;
+  overallStatus?: 'COMPLIANT' | 'NON_COMPLIANT' | 'PARTIALLY_COMPLIANT' | string;
+  summary?: string;
+  ruleTotal?: number;
+  ruleCompleted?: number;
+  chunkTotal?: number;
   issues: ReviewIssue[];
   result?: Record<string, unknown>;
   errorMessage?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ReviewRuleResult {
+  ruleResultId: ID;
+  ruleCode: string;
+  ruleDescription: string;
+  ruleOrder: number;
+  executionStatus: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED' | string;
+  complianceStatus?: 'COMPLIANT' | 'NON_COMPLIANT' | 'PARTIALLY_COMPLIANT' | string;
+  reason?: string;
+  suggestion?: string;
+  evidence: Array<Record<string, unknown>>;
+  confidence?: number;
+  modelTraceId?: string;
+  errorMessage?: string;
+  startedAt?: string;
+  completedAt?: string;
 }
 
 export interface ReportItem {
