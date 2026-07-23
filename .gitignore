@@ -62,4 +62,5 @@ python-ai-service/.coverage.*
 python-ai-service/htmlcov/
 python-ai-service/.mypy_cache/
 python-ai-service/.ruff_cache/
-docs/
+docs/*
+!docs/智慧工地大模型应用系统-系统设计文档.md

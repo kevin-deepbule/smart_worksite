@@ -218,6 +218,7 @@ Request IDs are handled by `common.config.RequestIdFilter`. The response header 
 - Keep changes focused and avoid unrelated refactors.
 - For every project content change, update `AGENTS.md` and the relevant files under `docs/` in the same change set.
 - Documentation updates are required for changes to code, APIs, configuration, technical stack, database schema, module boundaries, startup steps, deployment, or collaboration rules.
+- System-wide architecture, module boundaries, core workflows, task reliability, data design, security, or deployment changes must also update `docs/智慧工地大模型应用系统-系统设计文档.md`.
 - Documentation updates are not required for read-only investigation, temporary debugging commands, log inspection, or other actions that do not change project content.
 - If changing public contracts, database schema, external APIs, technical stack decisions, or collaboration rules, update docs as well.
 - The workspace may contain user changes; never revert unrelated files.
